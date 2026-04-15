@@ -11,6 +11,7 @@
   },
   "googleDrive": {
     "enabled": false,
+    "folderName": "akira-agent_src",
     "folderId": "",
     "composioAccountId": "ca_gdrive_xxxxx",
     "localCachePath": "social-marketing/photos/",

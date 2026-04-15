@@ -83,7 +83,7 @@ The goal is to collect enough restaurant DNA to produce good content on day one.
 4. **Vibe / atmosphere.** One-sentence description. Cozy candlelit, bright and fresh, rustic, sleek. This infers image style.
 5. **Typical guest.** Date-night couples? Families? Foodies? Locals? Informs hook voice.
 6. **Booking method + URL.** How do people book? If there's a URL, capture it — UTM tracking depends on it.
-7. **Google Drive photos?** Only ask if Drive is configured. *"Want to drop your best dish photos in a shared folder? I'll use them as references instead of generating everything from scratch — it'll look like your actual food."*
+7. **Google Drive photos?** Only ask if Drive is configured. *"Want to drop your best dish photos in the shared folder I set up? It's called `akira-agent_src` in your Google Drive. Anything you put in there I'll use as references instead of generating from scratch — it'll look like your actual food."*
 
 End with: *"Perfect. Type **generate post** when you want content, or just tell me what's going on tonight and I'll figure it out."*
 
