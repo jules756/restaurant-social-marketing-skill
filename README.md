@@ -35,7 +35,8 @@ Legacy v2 (single 868-line `SKILL.md`) is archived under [`legacy/`](legacy/) fo
 │                         TWO APIs ONLY                           │
 │                                                                 │
 │  OpenRouter  (OPENROUTER_API_KEY)                               │
-│    → LLM calls + image generation (models set in config.models) │
+│    → Image generation (model set in config.imageGen.model)     │
+│    → Chat / captions / research run on Hermes's own model       │
 │                                                                 │
 │  Composio  (COMPOSIO_API_KEY)                                   │
 │    → Google Drive, TikTok, Instagram, Facebook                  │

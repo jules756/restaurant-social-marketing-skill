@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generate slideshow images via OpenRouter. Model comes from config.models.image.
+ * Generate slideshow images via OpenRouter. Model comes from config.imageGen.model.
  *
  * Selects approach per slide based on photo-inventory.json:
  *   - If a matching Drive photo exists → img2img (OpenRouter images/edits).
@@ -53,10 +53,10 @@ if (!OPENROUTER_API_KEY) {
 
 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 const prompts = JSON.parse(fs.readFileSync(promptsPath, 'utf-8'));
-const model = config.models?.image || config.imageGen?.model;
+const model = config.imageGen?.model;
 
 if (!model) {
-  console.error('No image model configured. Set config.models.image in config.json.');
+  console.error('No image model configured. Set config.imageGen.model in config.json.');
   process.exit(1);
 }
 

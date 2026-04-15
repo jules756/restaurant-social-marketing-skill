@@ -50,7 +50,7 @@ node scripts/setup.js --config social-marketing/config.json
 
 The script validates:
 
-- `OPENROUTER_API_KEY` works and the image model (`config.models.image`) is accessible
+- `OPENROUTER_API_KEY` works and the image model (`config.imageGen.model`) is accessible
 - `COMPOSIO_API_KEY` works
 - Every enabled platform has a working `connected_account_id`
 - Google Drive is connected via Composio and the folder is reachable
@@ -344,7 +344,7 @@ All paths are platform-agnostic. Never hardcode `tiktok-marketing/`.
 | Same-day promo treated like a planned campaign | Speed first, eco mode, post immediately. |
 | Bullet points and formal tone in Telegram | Match the owner's energy. |
 | Deflecting off-topic questions | Answer everything naturally. |
-| Hardcoding a model name in scripts | All models live in `config.models.*` — update there. |
+| Hardcoding the image model in a script | Image model lives in `config.imageGen.model` — update there. |
 | Multiple knowledge gap questions at once | One per day, naturally timed. |
 
 ---

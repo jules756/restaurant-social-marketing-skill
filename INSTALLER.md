@@ -101,7 +101,7 @@ The template already contains `models`, `imageGen.provider`, `analytics`, `timez
 
 For any platform the restaurant is **not** using, leave `enabled: false` and the placeholder `ca_xxxxx` value.
 
-**If `config.models.image` already reads `google/gemini-2.5-flash-image-preview`, leave it.** Do not change it to `google/gemini-3.1-flash-image-preview` or anything else unless the human explicitly hands you a different model name.
+**If `config.imageGen.model` already reads `google/gemini-2.5-flash-image-preview`, leave it.** Do not change it to `google/gemini-3.1-flash-image-preview` or anything else unless the human explicitly hands you a different model name.
 
 ### Step 6 — Run the validator
 
@@ -115,7 +115,7 @@ Every line must report ✅. If any line shows ❌, read the fix instruction on t
 Common failures:
 - Telegram `chatId` not set → have the human send a message to the bot, then `curl https://api.telegram.org/bot<TOKEN>/getUpdates` to read the chat id.
 - A platform's `composioAccountId` is `ca_xxxxx` → the human either needs to connect it in Composio (and give you the real `ca_…`), or the platform should be `enabled: false`.
-- `config.models.image` not reachable → browse https://openrouter.ai/models, pick an image-generation model that's listed, tell the human, and update `config.models.image` with the model they confirm.
+- `config.imageGen.model` not reachable → browse https://openrouter.ai/models, pick an image-generation model that's listed, tell the human, and update `config.imageGen.model` with the model they confirm.
 
 ### Step 7 — Start Hermes
 

@@ -76,7 +76,11 @@ if (menuPath && fs.existsSync(menuPath)) {
   }
 }
 
-const VISION_MODEL = config.models?.vision || 'openai/gpt-4o-mini';
+// Internal implementation detail — not user-configurable. Vision classification
+// is part of the image pipeline; the user only controls the image GENERATION
+// model via config.imageGen.model. Override via VISION_MODEL env var if truly
+// necessary, but the default is intentional and should rarely change.
+const VISION_MODEL = process.env.VISION_MODEL || 'openai/gpt-4o-mini';
 
 async function classifyPhoto(filePath) {
   const buf = fs.readFileSync(filePath);

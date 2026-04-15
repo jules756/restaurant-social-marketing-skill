@@ -23,16 +23,10 @@
     "bookingTracking": { "method": "manual", "dailyBaseline": 0 },
     "utmSource": "social"
   },
-  "models": {
-    "_comment": "Single source of truth for every model used. Update here when new models ship — no code changes needed. All models go through OpenRouter (https://openrouter.ai/models).",
-    "image": "google/gemini-2.5-flash-image-preview",
-    "vision": "openai/gpt-4o-mini",
-    "chat": "anthropic/claude-3.5-sonnet",
-    "caption": "anthropic/claude-3.5-sonnet",
-    "research": "anthropic/claude-3.5-sonnet"
-  },
   "imageGen": {
-    "provider": "openrouter"
+    "_comment": "Image generation only. Chat, captions, and research all run on Hermes's configured model — not set here. Update model when a new image model ships on OpenRouter (https://openrouter.ai/models).",
+    "provider": "openrouter",
+    "model": "google/gemini-2.5-flash-image-preview"
   },
   "timezone": "Europe/Stockholm",
   "country": "SE",

@@ -11,7 +11,7 @@
  * Checks (every line reports ✅ or ❌ with a fix instruction):
  *   1. node v18+
  *   2. OPENROUTER_API_KEY set and working
- *   3. Configured image model (config.models.image) accessible via OpenRouter
+ *   3. Configured image model (config.imageGen.model) accessible via OpenRouter
  *   4. COMPOSIO_API_KEY set and working
  *   5. Each enabled platform has a working connected_account_id
  *   6. Google Drive connected and folder reachable (if enabled)
@@ -118,9 +118,9 @@ async function checkOpenRouterKey() {
 }
 
 async function checkImageModel(config) {
-  const imageModel = config.models?.image;
+  const imageModel = config.imageGen?.model;
   if (!imageModel) {
-    record('config.models.image set', false, 'Set config.models.image to an OpenRouter image model (e.g. google/gemini-2.5-flash-image-preview)');
+    record('config.imageGen.model set', false, 'Set config.imageGen.model to an OpenRouter image model (e.g. google/gemini-2.5-flash-image-preview)');
     return;
   }
   if (!OPENROUTER_API_KEY) {
@@ -141,7 +141,7 @@ async function checkImageModel(config) {
     record(
       `${imageModel} reachable`,
       found,
-      found ? null : `Model not in OpenRouter catalog. Browse https://openrouter.ai/models and update config.models.image.`
+      found ? null : `Model not in OpenRouter catalog. Browse https://openrouter.ai/models and update config.imageGen.model.`
     );
   } catch (e) {
     record(`${imageModel} reachable`, false, `Error: ${e.message}`);

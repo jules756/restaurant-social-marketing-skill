@@ -49,7 +49,7 @@ Never reverse this order. Photo inventory is checked **before** prompt construct
 
 ## Image Generation by Scenario
 
-All generation calls go through **OpenRouter** using whatever model is configured in `config.models.image` (see `templates/config.template.json`). The default is an OpenRouter-available image model capable of both text-to-image and image-to-image edits. The Installer updates this one field when a better model ships — no code changes. See `docs/openrouter-notes.md` for endpoint details and the img2img fallback contract.
+All image generation calls go through **OpenRouter** using whatever model is set in `config.imageGen.model` (see `templates/config.template.json`). This is the only model this skill suite configures — chat, caption writing, and research all run on Hermes's own model. When a better image model ships, the Installer updates this one field; no code changes. See `docs/openrouter-notes.md` for endpoint details and the img2img fallback contract.
 
 ### Real photo exists → img2img (always preferred)
 
