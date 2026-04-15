@@ -103,30 +103,87 @@ restaurant-social-marketing-skill/
 
 ## Installation (Per Client)
 
+Run each step below on the client VM. Every step is a single command — paste one at a time.
+
+### Step 1 — Clone the repo
+
 ```bash
-# 1. Copy skills to Hermes
-cp -r skills/* ~/.hermes/skills/
-cp -r adapted-skills/* ~/.hermes/skills/
+git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/restaurant-social-marketing-skill
+cd ~/restaurant-social-marketing-skill
+```
 
-# 2. Set API keys
-cat >> ~/.hermes/.env <<EOF
-OPENROUTER_API_KEY=sk-or-...
-COMPOSIO_API_KEY=...
-EOF
+After this: you should see `skills/`, `adapted-skills/`, `scripts/`, `templates/` inside `~/restaurant-social-marketing-skill`.
 
-# 3. Create working directory
-mkdir -p social-marketing/{photos/{dishes,ambiance,kitchen,exterior},posts,reports/trend-reports,knowledge-base}
-cp templates/config.template.json social-marketing/config.json
-# Fill in restaurant + Composio connected_account_ids in config.json
+### Step 2 — Copy skills into Hermes
 
-# 4. Validate (Installer)
-node scripts/setup.js --config social-marketing/config.json
+```bash
+mkdir -p ~/.hermes/skills
+cp -r ~/restaurant-social-marketing-skill/skills/* ~/.hermes/skills/
+cp -r ~/restaurant-social-marketing-skill/adapted-skills/* ~/.hermes/skills/
+```
 
-# 5. Start Hermes — bot is ready for the owner
+### Step 3 — Add the OpenRouter key
+
+Replace `sk-or-...` with your real key:
+
+```bash
+echo "OPENROUTER_API_KEY=sk-or-REPLACE_ME" >> ~/.hermes/.env
+```
+
+### Step 4 — Add the Composio key
+
+Replace the placeholder with your real key:
+
+```bash
+echo "COMPOSIO_API_KEY=REPLACE_ME" >> ~/.hermes/.env
+chmod 600 ~/.hermes/.env
+```
+
+### Step 5 — Scaffold the client working directory
+
+```bash
+cd ~
+mkdir -p social-marketing/photos/{dishes,ambiance,kitchen,exterior,unsorted}
+mkdir -p social-marketing/{posts,knowledge-base}
+mkdir -p social-marketing/reports/{trend-reports,competitor}
+cp ~/restaurant-social-marketing-skill/templates/config.template.json ~/social-marketing/config.json
+```
+
+### Step 6 — Fill in `~/social-marketing/config.json`
+
+Open the file and set at minimum:
+- `restaurant.name`, `restaurant.cuisine`, `restaurant.location`, `restaurant.bookingUrl`
+- For each platform you're enabling: `platforms.<name>.enabled = true` and `platforms.<name>.composioAccountId = "ca_..."` (from Composio dashboard)
+- If using Drive: `googleDrive.enabled = true`, `googleDrive.folderId`, `googleDrive.composioAccountId`
+
+### Step 7 — Validate (Installer only)
+
+```bash
+set -a && source ~/.hermes/.env && set +a
+node ~/restaurant-social-marketing-skill/scripts/setup.js --config ~/social-marketing/config.json
+```
+
+Every check must report ✅. **Do not hand the bot to the owner until `setup.js` reports all green.**
+
+### Step 8 — Start Hermes
+
+```bash
 hermes
 ```
 
-Do **not** hand the bot to the owner until `setup.js` reports all ✅.
+---
+
+### Shortcut — one command
+
+If you trust the script end-to-end:
+
+```bash
+git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/restaurant-social-marketing-skill \
+  && cd ~/restaurant-social-marketing-skill \
+  && CLIENT_DIR=~/social-marketing ./install.sh
+```
+
+`install.sh` runs Steps 2–5 + 7 and prompts for the two API keys. You still need to edit `config.json` (Step 6) between the first and second runs.
 
 ---
 
