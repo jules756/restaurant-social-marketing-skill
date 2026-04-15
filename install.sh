@@ -23,7 +23,14 @@ ENV_FILE="$HERMES_DIR/.env"
 # different layout, or set it to "" to install at the top level.
 SKILLS_CATEGORY="${SKILLS_CATEGORY:-social-media}"
 SKILLS_DIR="$HERMES_DIR/skills${SKILLS_CATEGORY:+/$SKILLS_CATEGORY}"
-CLIENT_DIR="${CLIENT_DIR:-social-marketing}"
+# Client working dir — default to an absolute path under $HOME so running
+# install.sh from inside the repo doesn't create it inside the repo tree.
+# Override via CLIENT_DIR=/somewhere/else if needed.
+CLIENT_DIR="${CLIENT_DIR:-$HOME/social-marketing}"
+# If the user passed a relative CLIENT_DIR, resolve it relative to $HOME.
+if [[ "$CLIENT_DIR" != /* ]]; then
+  CLIENT_DIR="$HOME/$CLIENT_DIR"
+fi
 
 echo "=== Restaurant Social Marketing Installer ==="
 echo "Repo:    $REPO_DIR"
