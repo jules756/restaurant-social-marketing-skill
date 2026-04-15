@@ -1,45 +1,156 @@
-# 🍕 Restaurant Social Media Marketing - SUPER SIMPLE INSTALL
+# Restaurant Social Media Marketing — v3
 
-## 📋 **What This Does**
-Automatically creates and posts food content on TikTok, Instagram, Facebook to get more restaurant customers.
+A set of Hermes Agent skills that turn a restaurant's social media into an autonomous marketing partner. The goal is always **more bookings**, not more views.
 
-## 🚀 **INSTALLATION - 2 STEPS ONLY**
+**Status:** v3 architecture — three custom skills + three adapted external skills + shared scripts.
 
-### STEP 1: Get the Skill
-1. Go to: https://github.com/jules756/restaurant-social-marketing-skill
-2. Click on "SKILL.md"
-3. Click the **"Raw"** button (top right)
-4. Press `Ctrl+A` to select ALL text
-5. Press `Ctrl+C` to copy
+Legacy v2 (single 868-line `SKILL.md`) is archived under [`legacy/`](legacy/) for reference.
 
-### STEP 2: Install in Your VM
-In your Hermes agent chat on your VM, paste this EXACT line:
+---
+
+## Architecture
 
 ```
-skill_manage create --name restaurant-social-marketing --content "PASTE_EVERYTHING_YOU_JUST_COPIED_HERE"
+┌─────────────────────────────────────────────────────────────────┐
+│                    CUSTOM SKILLS (in this repo)                 │
+│                                                                 │
+│  skills/restaurant-marketing      Orchestrator. Onboarding,     │
+│                                   daily commands, conversation, │
+│                                   promotions, calendar, self-   │
+│                                   improvement loop.             │
+│                                                                 │
+│  skills/content-preparation       Asset pipeline. Decides what  │
+│                                   to create, finds reference    │
+│                                   photos, picks img2img vs      │
+│                                   txt2img, coordinates overlays │
+│                                   and captions.                 │
+│                                                                 │
+│  skills/marketing-intelligence    Data layer. Daily analytics,  │
+│                                   weekly trend research,        │
+│                                   competitor research, cross-   │
+│                                   client aggregation.           │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ all API calls via
+┌──────────────────────────▼──────────────────────────────────────┐
+│                         TWO APIs ONLY                           │
+│                                                                 │
+│  OpenRouter  (OPENROUTER_API_KEY)                               │
+│    → LLM calls + image generation (openai/gpt-image-1.5)        │
+│                                                                 │
+│  Composio  (COMPOSIO_API_KEY)                                   │
+│    → Google Drive, TikTok, Instagram, Facebook                  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ knowledge only — no extra keys
+┌──────────────────────────▼──────────────────────────────────────┐
+│                   ADAPTED EXTERNAL SKILLS                       │
+│                                                                 │
+│  adapted-skills/food-photography-hermes                         │
+│  adapted-skills/social-media-seo-hermes                         │
+│  adapted-skills/social-trend-monitor-hermes                     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**IMPORTANT**: 
-- Replace `PASS_EVERYTHING_YOU_JUST_COPIED_HERE` with what you actually copied from GitHub
-- Keep the quotes at the beginning and end
-- Press Enter
+---
 
-## 📱 What Happens After:
-The Hermes agent will automatically:
-1. Ask what language you want to speak in
-2. Ask what language to post in on social media  
-3. Check your TikTok/Instagram/Facebook/Google Drive connections (IT DOES THIS ITSELF)
-4. Confirm your restaurant name from your Google Drive
-5. Start learning about your restaurant through simple chat
+## Two-Actor Model
 
-## 💡 Daily Use:
-- Agent makes drafts in your TikTok inbox every morning
-- You review, add a trending sound, publish (30 seconds)
-- Agent learns what gets you more bookings and improves
-- Tell it about specials like "Half price apps 5-7pm" and it auto-makes promo posts
+The most important design principle. Enforced across all skills.
 
-## 🔗 **Direct Links:**
-- **Copy Skill From**: https://raw.githubusercontent.com/jules756/restaurant-social-marketing-skill/main/SKILL.md
-- **This Page**: https://github.com/jules756/restaurant-social-marketing-skill
+| Actor                  | Channel       | Role                            |
+|------------------------|---------------|---------------------------------|
+| **Installer**          | Terminal only | API keys, config, setup. Once.  |
+| **Restaurant Owner**   | Telegram only | Restaurant info, daily use.     |
 
-**LITERALLY JUST COPY FROM GITHUB AND PASTE INTO YOUR VM. THAT'S ALL YOU NEED TO DO.**
+If a Telegram message from the agent requires technical knowledge to answer, that's a bug. Fix it in setup, not in conversation.
+
+---
+
+## Repository Layout
+
+```
+restaurant-social-marketing-skill/
+├── skills/                           ← custom skills built for Hermes
+│   ├── restaurant-marketing/SKILL.md
+│   ├── content-preparation/SKILL.md
+│   └── marketing-intelligence/SKILL.md
+│
+├── adapted-skills/                   ← external skills, API calls stripped
+│   ├── food-photography-hermes/SKILL.md
+│   ├── social-media-seo-hermes/SKILL.md
+│   └── social-trend-monitor-hermes/SKILL.md
+│
+├── scripts/                          ← Node.js scripts (next phase)
+│   ├── setup.js                      ← Phase 0 validation
+│   ├── drive-sync.js
+│   ├── drive-inventory.js
+│   ├── generate-slides.js
+│   ├── add-text-overlay.js
+│   ├── daily-report.js
+│   ├── weekly-research.js
+│   ├── competitor-research.js
+│   └── aggregator.js
+│
+├── templates/
+│   └── config.template.json          ← blank config for new deployments
+│
+├── docs/
+│   └── PRD-v3.md                     ← design reference
+│
+└── legacy/                           ← archived v2 skill + docs
+```
+
+---
+
+## Installation (Per Client)
+
+```bash
+# 1. Copy skills to Hermes
+cp -r skills/* ~/.hermes/skills/
+cp -r adapted-skills/* ~/.hermes/skills/
+
+# 2. Set API keys
+cat >> ~/.hermes/.env <<EOF
+OPENROUTER_API_KEY=sk-or-...
+COMPOSIO_API_KEY=...
+EOF
+
+# 3. Create working directory
+mkdir -p social-marketing/{photos/{dishes,ambiance,kitchen,exterior},posts,reports/trend-reports,knowledge-base}
+cp templates/config.template.json social-marketing/config.json
+# Fill in restaurant + Composio connected_account_ids in config.json
+
+# 4. Validate (Installer)
+node scripts/setup.js --config social-marketing/config.json
+
+# 5. Start Hermes — bot is ready for the owner
+hermes
+```
+
+Do **not** hand the bot to the owner until `setup.js` reports all ✅.
+
+---
+
+## What's Different from v2
+
+| v2 (archived)                               | v3                                              |
+|---------------------------------------------|-------------------------------------------------|
+| Single 868-line `SKILL.md`                  | 3 custom skills + 3 adapted external skills     |
+| Installer and Owner mixed in one flow       | Two-actor model, strictly enforced              |
+| `tiktok-marketing/` paths                   | Platform-agnostic `social-marketing/`           |
+| Hardcoded TikTok even when disabled         | Every feature checks `config.platforms`         |
+| Pure text-to-image generation               | img2img primary, txt2img fallback               |
+| Google Drive photos collected but unused    | Drive inventory drives every post               |
+| Knowledge base collected but unused         | Chef / recipe / sourcing posts weekly           |
+| Competitor research ran once                | Weekly trend cron + on-demand competitor cron   |
+| No self-improvement                         | Module C loop + cross-client aggregator         |
+| Formatted commands for promotions           | Natural language passive detection              |
+| OpenAI direct + `gpt-image-1`               | OpenRouter + `gpt-image-1.5`                    |
+
+---
+
+## References
+
+- **PRD v3** — `docs/PRD-v3.md` (copy target from `/Users/jules/Downloads/PRD-restaurant-social-marketing-v3.md`)
+- **OpenRouter** — https://openrouter.ai/docs
+- **Composio** — https://docs.composio.dev/tools
+- **Upstream external skills** — links in each adapted skill's SKILL.md.

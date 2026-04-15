@@ -1,0 +1,61 @@
+{
+  "restaurant": {
+    "name": "",
+    "cuisine": "",
+    "description": "",
+    "audience": "",
+    "vibe": "",
+    "signatureDishes": [],
+    "bookingUrl": "",
+    "location": "",
+    "priceRange": ""
+  },
+  "platforms": {
+    "instagram": { "enabled": false, "composioAccountId": "ca_xxxxx" },
+    "tiktok":    { "enabled": false, "composioAccountId": "ca_xxxxx" },
+    "facebook":  { "enabled": false, "composioAccountId": "ca_xxxxx" }
+  },
+  "googleDrive": {
+    "enabled": false,
+    "folderId": "",
+    "composioAccountId": "ca_gdrive_xxxxx",
+    "localCachePath": "social-marketing/photos/",
+    "inventoryPath": "social-marketing/photo-inventory.json"
+  },
+  "analytics": {
+    "composio": { "enabled": true },
+    "googleAnalytics": { "enabled": false, "propertyId": "" },
+    "bookingTracking": { "method": "manual", "dailyBaseline": 0 },
+    "utmSource": "social",
+    "bookingUrl": ""
+  },
+  "imageGen": {
+    "provider": "openrouter",
+    "model": "openai/gpt-image-1.5",
+    "basePrompt": ""
+  },
+  "timezone": "Europe/Stockholm",
+  "country": "SE",
+  "posting": {
+    "schedule": ["11:00", "17:00", "20:30"]
+  },
+  "knowledgeBase": {
+    "dir": "social-marketing/knowledge-base",
+    "menu": "social-marketing/knowledge-base/menu.json",
+    "history": "social-marketing/knowledge-base/history.json",
+    "chef": "social-marketing/knowledge-base/chef.json",
+    "recipes": "social-marketing/knowledge-base/recipes.json"
+  },
+  "paths": {
+    "baseDir": "social-marketing/",
+    "posts": "social-marketing/posts/",
+    "reports": "social-marketing/reports/",
+    "trendReports": "social-marketing/reports/trend-reports/",
+    "competitorReports": "social-marketing/reports/competitor/",
+    "errors": "social-marketing/errors.json",
+    "hookPerformance": "social-marketing/hook-performance.json",
+    "skillUpdates": "social-marketing/skill-updates.json",
+    "strategy": "social-marketing/strategy.json",
+    "competitorResearch": "social-marketing/competitor-research.json"
+  }
+}
