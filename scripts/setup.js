@@ -53,6 +53,30 @@ async function checkNode() {
   );
 }
 
+async function checkTelegram(config) {
+  const tg = config.telegram;
+  if (!tg?.botToken) {
+    record('Telegram bot token set', false, 'Set telegram.botToken in config.json (from @BotFather)');
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${tg.botToken}/getMe`);
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      record('Telegram bot reachable', false, `Telegram rejected token: ${data.description || res.status}`);
+      return;
+    }
+    record(`Telegram bot @${data.result.username}`, true);
+    if (!tg.chatId) {
+      record('Telegram chat_id set', false, 'Set telegram.chatId (send a message to the bot, then check https://api.telegram.org/bot<token>/getUpdates)');
+    } else {
+      record(`Telegram chat_id ${tg.chatId}`, true);
+    }
+  } catch (e) {
+    record('Telegram bot reachable', false, `Network error: ${e.message}`);
+  }
+}
+
 async function checkOpenRouterKey() {
   if (!OPENROUTER_API_KEY) {
     record('OPENROUTER_API_KEY present', false, 'Add OPENROUTER_API_KEY to ~/.hermes/.env');
@@ -198,6 +222,7 @@ async function checkGoogleDrive(config, composioOk) {
   const config = loadConfig(configPath);
 
   await checkNode();
+  await checkTelegram(config);
   const openrouterOk = await checkOpenRouterKey();
   if (openrouterOk) await checkImageModel();
   const composioOk = await checkComposioKey();

@@ -1,14 +1,8 @@
 {
-  "restaurant": {
-    "name": "",
-    "cuisine": "",
-    "description": "",
-    "audience": "",
-    "vibe": "",
-    "signatureDishes": [],
-    "bookingUrl": "",
-    "location": "",
-    "priceRange": ""
+  "_comment": "Installer-only file. Restaurant info is NEVER set here — the owner provides it via Telegram during onboarding, and the orchestrator writes it to social-marketing/restaurant-profile.json. This file holds API plumbing only.",
+  "telegram": {
+    "botToken": "",
+    "chatId": ""
   },
   "platforms": {
     "instagram": { "enabled": false, "composioAccountId": "ca_xxxxx" },
@@ -26,28 +20,21 @@
     "composio": { "enabled": true },
     "googleAnalytics": { "enabled": false, "propertyId": "" },
     "bookingTracking": { "method": "manual", "dailyBaseline": 0 },
-    "utmSource": "social",
-    "bookingUrl": ""
+    "utmSource": "social"
   },
   "imageGen": {
     "provider": "openrouter",
-    "model": "openai/gpt-image-1.5",
-    "basePrompt": ""
+    "model": "openai/gpt-image-1.5"
   },
   "timezone": "Europe/Stockholm",
   "country": "SE",
   "posting": {
     "schedule": ["11:00", "17:00", "20:30"]
   },
-  "knowledgeBase": {
-    "dir": "social-marketing/knowledge-base",
-    "menu": "social-marketing/knowledge-base/menu.json",
-    "history": "social-marketing/knowledge-base/history.json",
-    "chef": "social-marketing/knowledge-base/chef.json",
-    "recipes": "social-marketing/knowledge-base/recipes.json"
-  },
   "paths": {
     "baseDir": "social-marketing/",
+    "restaurantProfile": "social-marketing/restaurant-profile.json",
+    "knowledgeBaseDir": "social-marketing/knowledge-base/",
     "posts": "social-marketing/posts/",
     "reports": "social-marketing/reports/",
     "trendReports": "social-marketing/reports/trend-reports/",

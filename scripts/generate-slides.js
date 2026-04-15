@@ -163,7 +163,11 @@ async function withRetry(fn, retries = 2) {
   const inventory = loadInventory();
   const refPhoto = findReferencePhoto(inventory, dish);
   const approach = refPhoto ? 'img2img' : 'txt2img';
-  console.log(`\nGenerating ${prompts.slides.length} slides for ${config.restaurant?.name || 'restaurant'}`);
+  const profilePath = config.paths?.restaurantProfile || 'social-marketing/restaurant-profile.json';
+  const restaurantName = fs.existsSync(profilePath)
+    ? (JSON.parse(fs.readFileSync(profilePath, 'utf-8')).name || 'restaurant')
+    : 'restaurant';
+  console.log(`\nGenerating ${prompts.slides.length} slides for ${restaurantName}`);
   console.log(`  platform: ${platform}  urgency: ${urgency}  approach: ${approach}  model: ${model}`);
   if (refPhoto) console.log(`  reference: ${refPhoto}\n`);
 

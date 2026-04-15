@@ -29,8 +29,21 @@ if (!configPath) {
 
 const config = loadConfig(configPath);
 const today = new Date().toISOString().split('T')[0];
-const cuisine = config.restaurant?.cuisine || 'restaurant';
-const city = config.restaurant?.location || '';
+
+// Restaurant info lives in restaurant-profile.json (owner-provided via Telegram),
+// NOT in config.json. config.json is Installer-scope only.
+function loadProfile() {
+  const fs = require('fs');
+  const profilePath = config.paths?.restaurantProfile || 'social-marketing/restaurant-profile.json';
+  if (!fs.existsSync(profilePath)) {
+    console.error(`No restaurant profile at ${profilePath}. Owner must complete Telegram onboarding first.`);
+    process.exit(1);
+  }
+  return JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
+}
+const profile = loadProfile();
+const cuisine = profile.cuisine || 'restaurant';
+const city = profile.location || '';
 const year = new Date().getFullYear();
 
 const plan = {

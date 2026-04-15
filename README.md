@@ -149,12 +149,16 @@ mkdir -p social-marketing/reports/{trend-reports,competitor}
 cp ~/restaurant-social-marketing-skill/templates/config.template.json ~/social-marketing/config.json
 ```
 
-### Step 6 — Fill in `~/social-marketing/config.json`
+### Step 6 — Fill in `~/social-marketing/config.json` (Installer scope only)
 
-Open the file and set at minimum:
-- `restaurant.name`, `restaurant.cuisine`, `restaurant.location`, `restaurant.bookingUrl`
-- For each platform you're enabling: `platforms.<name>.enabled = true` and `platforms.<name>.composioAccountId = "ca_..."` (from Composio dashboard)
-- If using Drive: `googleDrive.enabled = true`, `googleDrive.folderId`, `googleDrive.composioAccountId`
+`config.json` is Installer-scope only — it holds API plumbing, never restaurant content. **Do not put restaurant name, cuisine, menu, or booking URL here.** Those come from the owner via Telegram during Step 9 onboarding and land in `restaurant-profile.json`.
+
+Set only:
+- **`telegram.botToken`** — from @BotFather.
+- **`telegram.chatId`** — the owner's Telegram chat ID (send a message to the bot first, then fetch from `https://api.telegram.org/bot<TOKEN>/getUpdates`).
+- **`platforms.<name>.enabled`** + **`platforms.<name>.composioAccountId`** — one per platform the restaurant uses (from Composio dashboard → Toolkits → Connect).
+- **`googleDrive.enabled`** + **`googleDrive.folderId`** + **`googleDrive.composioAccountId`** — only if the restaurant is using Drive photos.
+- **`timezone`**, **`country`** — defaults are `Europe/Stockholm` / `SE`; change if needed.
 
 ### Step 7 — Validate (Installer only)
 
@@ -170,6 +174,10 @@ Every check must report ✅. **Do not hand the bot to the owner until `setup.js`
 ```bash
 hermes
 ```
+
+### Step 9 — Hand the Telegram bot to the owner
+
+The owner starts a chat with the bot. The orchestrator runs ≤7 onboarding questions and writes the answers to `~/social-marketing/restaurant-profile.json`. The Installer never touches this file.
 
 ---
 

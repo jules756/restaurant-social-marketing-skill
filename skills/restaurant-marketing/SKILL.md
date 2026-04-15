@@ -58,7 +58,16 @@ The script validates:
 
 Every item reports `✅` or `❌` with a fix instruction. **Do not hand the bot to the owner until every line is `✅`.** If the owner has to do technical troubleshooting, the handoff was premature.
 
-Config schema lives at `templates/config.template.json`. The full working config is at `social-marketing/config.json` and is the single source of truth for the entire pipeline.
+### What belongs in `config.json` vs. `restaurant-profile.json`
+
+This distinction is the backbone of the two-actor model. Do not confuse them.
+
+| File                          | Owner      | Contains                                                           |
+|-------------------------------|------------|--------------------------------------------------------------------|
+| `social-marketing/config.json`           | Installer  | API plumbing only — Telegram bot token + chat_id, Composio connected_account_ids per platform, Drive folder id, timezone, country, posting schedule. **No restaurant content.** |
+| `social-marketing/restaurant-profile.json` | Orchestrator (writes from Telegram answers) | Restaurant name, cuisine, location, booking URL, signature dishes, vibe, typical guest, and anything else the owner tells you over time. |
+
+Scripts that need a restaurant name, cuisine, or location read from `restaurant-profile.json`. The Installer never edits that file. The orchestrator never edits `config.json`.
 
 ---
 
@@ -78,7 +87,23 @@ The goal is to collect enough restaurant DNA to produce good content on day one.
 
 End with: *"Perfect. Type **generate post** when you want content, or just tell me what's going on tonight and I'll figure it out."*
 
-Save to `social-marketing/restaurant-profile.json`.
+Save every answer to `social-marketing/restaurant-profile.json` as you collect it (append, don't wait until the end). The Installer's `config.json` is never touched. Expected profile shape:
+
+```json
+{
+  "name": "",
+  "cuisine": "",
+  "location": "",
+  "bookingUrl": "",
+  "signatureDishes": [
+    { "name": "", "visualDescription": "" }
+  ],
+  "vibe": "",
+  "typicalGuest": "",
+  "language": "",
+  "onboardedAt": "2026-04-15"
+}
+```
 
 **Do not ask about** image style, platform choice, Composio, TikTok warmup, competitor research, or cron scheduling. If something wasn't set up correctly in Phase 0, that's a Phase 0 bug — do not cover it with onboarding questions.
 
