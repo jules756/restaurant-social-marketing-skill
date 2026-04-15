@@ -44,6 +44,25 @@ const record = (label, ok, fix) => {
   console.log(`${icon} ${label}${!ok && fix ? `\n   → ${fix}` : ''}`);
 };
 
+function checkTwoActorBoundary(config) {
+  // Installer-scope only. If any of these appear in config.json, it means the
+  // Installer crossed the boundary into owner-scope — restaurant content
+  // belongs in restaurant-profile.json (written by the orchestrator from
+  // Telegram answers), NOT in config.json.
+  const forbidden = ['restaurant', 'menu', 'chef', 'history', 'recipes', 'vibe', 'signatureDishes'];
+  const present = forbidden.filter((k) => k in config);
+  if (present.length > 0) {
+    record(
+      'config.json is Installer-scope only',
+      false,
+      `Remove these keys from config.json — they are owner-scope and belong in social-marketing/restaurant-profile.json (set by the orchestrator via Telegram): ${present.join(', ')}`
+    );
+    return false;
+  }
+  record('config.json is Installer-scope only', true);
+  return true;
+}
+
 async function checkNode() {
   const major = parseInt(process.versions.node.split('.')[0], 10);
   record(
@@ -226,6 +245,7 @@ async function checkGoogleDrive(config, composioOk) {
   console.log(`\n=== Restaurant Social Marketing — Phase 0 Setup Check ===\nConfig: ${configPath}\n`);
   const config = loadConfig(configPath);
 
+  checkTwoActorBoundary(config);
   await checkNode();
   await checkTelegram(config);
   const openrouterOk = await checkOpenRouterKey();

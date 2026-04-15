@@ -108,6 +108,8 @@ legacy/    ← archived v2 skill + scripts. Do NOT copy to ~/.hermes/skills/.
 
 ## Installation (Per Client)
 
+> **If you are an AI agent doing the install from the terminal, read [INSTALLER.md](INSTALLER.md) first — it's the unambiguous brief for what you can and cannot ask the human.**
+
 Run each step below on the client VM. Every step is a single command — paste one at a time.
 
 ### Step 1 — Clone the repo
