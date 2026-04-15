@@ -112,10 +112,52 @@ const PLATFORMS = {
   }
 };
 
+/**
+ * Find a Google Drive folder by name via Composio. Returns the folder's
+ * Drive file ID, or null if no folder with that name is reachable by the
+ * connected account. Case-sensitive exact match on the folder name.
+ *
+ * Uses the Drive `q` search parameter via GOOGLEDRIVE_LIST_FILES. Different
+ * Composio tool versions expose the query parameter under slightly different
+ * names, so we try a few shapes and pick the first that works.
+ */
+async function findDriveFolderByName(apiKey, connectedAccountId, folderName) {
+  const userId = `drive_folder_search_${Date.now()}`;
+  const query = `mimeType='application/vnd.google-apps.folder' and name='${folderName.replace(/'/g, "\\'")}' and trashed=false`;
+
+  const attempts = [
+    { q: query, page_size: 10 },
+    { query, page_size: 10 },
+    { search_query: query, page_size: 10 }
+  ];
+
+  let lastError;
+  for (const args of attempts) {
+    try {
+      const result = await executeTool(
+        apiKey,
+        connectedAccountId,
+        userId,
+        PLATFORMS.googledrive.listFilesTool,
+        args
+      );
+      const files = result.data?.files || result.files || result.data || [];
+      const folder = files.find((f) => (f.name || f.title) === folderName);
+      if (folder?.id) return folder.id;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  if (lastError) {
+    console.warn(`findDriveFolderByName("${folderName}") failed: ${lastError.message}`);
+  }
+  return null;
+}
+
 function loadConfig(configPath) {
   const resolved = path.resolve(configPath);
   if (!fs.existsSync(resolved)) throw new Error(`Config file not found: ${resolved}`);
   return JSON.parse(fs.readFileSync(resolved, 'utf-8'));
 }
 
-module.exports = { executeTool, executeProxy, uploadFile, PLATFORMS, BASE_URL, loadConfig };
+module.exports = { executeTool, executeProxy, uploadFile, findDriveFolderByName, PLATFORMS, BASE_URL, loadConfig };

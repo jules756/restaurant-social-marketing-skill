@@ -20,7 +20,8 @@
  * owner until exit code is 0.
  */
 
-const { executeTool, executeProxy, loadConfig, PLATFORMS } = require('./composio-helpers');
+const fs = require('fs');
+const { executeTool, executeProxy, findDriveFolderByName, loadConfig, PLATFORMS } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -205,7 +206,7 @@ async function checkPlatform(name, platformConfig, composioOk) {
   }
 }
 
-async function checkGoogleDrive(config, composioOk) {
+async function checkGoogleDrive(config, composioOk, configPath) {
   const drive = config.googleDrive;
   if (!drive?.enabled) {
     console.log('⏭  Google Drive disabled — skipping');
@@ -219,10 +220,30 @@ async function checkGoogleDrive(config, composioOk) {
     record('Google Drive connected', false, 'Set googleDrive.composioAccountId in config.json');
     return;
   }
+
+  // Auto-resolve folderId by name if missing. The Installer only has to know
+  // the folder NAME (akira-agent_src by convention) — setup.js finds the ID
+  // via Composio and writes it back to config.json for future runs.
   if (!drive.folderId) {
-    record('Google Drive folder set', false, 'Set googleDrive.folderId in config.json');
-    return;
+    if (!drive.folderName) {
+      record('Google Drive folder set', false, 'Set googleDrive.folderName in config.json (default: "akira-agent_src")');
+      return;
+    }
+    console.log(`   Searching Drive for folder "${drive.folderName}"...`);
+    const foundId = await findDriveFolderByName(COMPOSIO_API_KEY, drive.composioAccountId, drive.folderName);
+    if (!foundId) {
+      record(
+        `Google Drive folder "${drive.folderName}" found`,
+        false,
+        `No folder named "${drive.folderName}" is reachable by the connected Drive account. Ensure the folder exists and is shared with that account, or create it.`
+      );
+      return;
+    }
+    drive.folderId = foundId;
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+    console.log(`   Resolved folderId ${foundId} — written back to ${configPath}`);
   }
+
   try {
     await executeTool(
       COMPOSIO_API_KEY,
@@ -231,7 +252,7 @@ async function checkGoogleDrive(config, composioOk) {
       PLATFORMS.googledrive.listFilesTool,
       { folder_id: drive.folderId, page_size: 1 }
     );
-    record(`Google Drive folder ${drive.folderId} reachable`, true);
+    record(`Google Drive folder "${drive.folderName || drive.folderId}" reachable`, true);
   } catch (e) {
     record(
       'Google Drive folder reachable',
@@ -255,7 +276,7 @@ async function checkGoogleDrive(config, composioOk) {
   for (const name of ['tiktok', 'instagram', 'facebook']) {
     await checkPlatform(name, config.platforms?.[name], composioOk);
   }
-  await checkGoogleDrive(config, composioOk);
+  await checkGoogleDrive(config, composioOk, configPath);
 
   const failed = checks.filter((c) => !c.ok);
   console.log('\n' + '─'.repeat(60));

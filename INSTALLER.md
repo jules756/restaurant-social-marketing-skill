@@ -13,7 +13,7 @@ You are the **Installer**. Your entire job is to collect four pieces of API plum
 | 1 | `OPENROUTER_API_KEY`         | Ask the human. Starts with `sk-or-…`.                                  |
 | 2 | `COMPOSIO_API_KEY`           | Ask the human. From https://app.composio.dev.                          |
 | 3 | `telegram.botToken` + `chatId` | Ask the human. Token from @BotFather; chat_id via `getUpdates`.     |
-| 4 | `platforms.*.composioAccountId` + `googleDrive.composioAccountId` + `googleDrive.folderId` | Ask the human per connected platform / for Drive. |
+| 4 | `platforms.*.composioAccountId` + `googleDrive.composioAccountId` | Ask the human per connected platform / for Drive. The Drive folder ID is auto-discovered from the folder name (`akira-agent_src`) — you do NOT need to ask the human for it. |
 
 **That is the complete list.** Do not invent a fifth item.
 
@@ -93,13 +93,14 @@ The template already contains `models`, `imageGen.provider`, `analytics`, `timez
   "googleDrive": {
     "enabled": true,
     "folderName": "akira-agent_src",
-    "folderId": "<from Drive URL: drive.google.com/drive/folders/<ID>>",
     "composioAccountId": "ca_gdrive_…"
   }
 }
 ```
 
 For any platform the restaurant is **not** using, leave `enabled: false` and the placeholder `ca_xxxxx` value.
+
+`googleDrive.folderId` is auto-discovered by `setup.js` in Step 6 — do not ask the human for it. If you don't know the folder ID, leave the key absent and set `folderName` to `akira-agent_src` (the convention). The validator will search Drive for that folder and write the ID back to `config.json`.
 
 **If `config.imageGen.model` already reads `google/gemini-2.5-flash-image-preview`, leave it.** Do not change it to `google/gemini-3.1-flash-image-preview` or anything else unless the human explicitly hands you a different model name.
 
