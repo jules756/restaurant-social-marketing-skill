@@ -60,6 +60,7 @@ ensure_key OPENROUTER_API_KEY "OpenRouter API key (sk-or-...)"
 ensure_key COMPOSIO_API_KEY   "Composio API key"
 
 # 3. Client working dir
+FRESH_CONFIG=0
 if [[ -d "$CLIENT_DIR" ]]; then
   echo "  ℹ  $CLIENT_DIR already exists — leaving structure in place"
 else
@@ -68,10 +69,21 @@ else
   cp "$REPO_DIR/templates/config.template.json" "$CLIENT_DIR/config.json"
   echo "  ✅ $CLIENT_DIR/ created"
   echo "  ✅ $CLIENT_DIR/config.json copied from template"
+  FRESH_CONFIG=1
 fi
 
 # 4. Validator
 echo
+if [[ "$FRESH_CONFIG" == "1" ]]; then
+  echo "Next step — fill in $CLIENT_DIR/config.json:"
+  echo "  • restaurant.{name, cuisine, location, bookingUrl}"
+  echo "  • platforms.{instagram|tiktok|facebook}.enabled + composioAccountId"
+  echo "  • googleDrive.{enabled, folderId, composioAccountId}"
+  echo
+  echo "Then re-run this script to validate:  ./install.sh"
+  exit 0
+fi
+
 echo "Running Phase 0 validator …"
 echo
 set -a
@@ -79,7 +91,7 @@ source "$ENV_FILE"
 set +a
 if ! node "$REPO_DIR/scripts/setup.js" --config "$CLIENT_DIR/config.json"; then
   echo
-  echo "❌ Phase 0 checks failed. Fill in $CLIENT_DIR/config.json and re-run this script."
+  echo "❌ Phase 0 checks failed. Fix the flagged items in $CLIENT_DIR/config.json and re-run this script."
   exit 1
 fi
 

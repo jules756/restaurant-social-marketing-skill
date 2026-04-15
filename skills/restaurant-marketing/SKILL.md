@@ -338,6 +338,39 @@ If you find yourself writing image prompts or analytics logic inside this skill,
 
 ---
 
+## Staged Scripts — Runtime Execution Contract
+
+Three scripts in `scripts/` stage a plan and expect **you, the agent**, to complete execution using Hermes's native tools. They are not broken — they are intentionally split so the heavy lifting happens inside the agent loop where web search, browser, and LLM synthesis are cheap and already available.
+
+### `weekly-research.js` (Module B — Monday 09:00 cron)
+
+1. Run the script. It writes `reports/trend-reports/YYYY-MM-DD-query-plan.json` and a placeholder `trend-report.json` with `status: "PENDING_WEB_SEARCH"`.
+2. **You then execute every query in the plan using the web search tool.** Batch them — most are independent.
+3. Synthesize findings into the final `trend-report.json` shape (see `marketing-intelligence` Module B). Overwrite the placeholder.
+4. Rewrite the narrative Markdown under `reports/trend-reports/YYYY-MM-DD-weekly.md` replacing the "pending synthesis" section with real recommendations.
+5. Send the owner the Monday summary (2 sentences + one concrete action).
+
+### `competitor-research.js` (Module D — on demand)
+
+1. Run the script. It writes `competitor-research.json` with `status: "PENDING_BROWSER_RUN"` and a scope plan.
+2. **You then execute the scope using the browser tool and web search** — TikTok, Instagram, Google Maps reviews, TripAdvisor, local press.
+3. Fill in the `competitors` array and `gapOpportunities` in the JSON. Overwrite the placeholder.
+4. Write the narrative summary under `reports/competitor/YYYY-MM-DD.md`.
+5. Send the owner a gap-focused summary (not a competitor-stats dump).
+
+### `aggregator.js` (network-level, weekly, Installer-run)
+
+Not run by the per-client agent. Runs at the network level (akira-agent/restaurant-marketing-skills repo). Opens a PR to `main` proposing skill updates. When a merge lands on this client's VM, acknowledge it naturally in the next Telegram message.
+
+---
+
+**Not staged (fully automated, trust the exit code):**
+- `setup.js`, `drive-sync.js`, `drive-inventory.js`, `generate-slides.js`, `add-text-overlay.js`, `daily-report.js`.
+
+For `daily-report.js`, if `config.analytics.bookingTracking.method === "manual"`, the script returns a summary with a `promptRequired` flag — when you see that, ask the owner *"How many covers did you do yesterday?"* and log the answer.
+
+---
+
 ## Cross-Client Learning
 
 When the aggregator (`scripts/aggregator.js`) opens a PR to `main` proposing a skill update based on patterns across 3+ clients, the Installer reviews and merges. When a merge lands on this client's VM (`git merge origin/main && hermes skills update`), acknowledge it naturally:

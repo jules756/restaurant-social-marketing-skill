@@ -4,10 +4,8 @@ description: Knowledge-only adaptation of the eachlabs food-photography-generati
 metadata:
   hermes-agent:
     requirements:
-      env:
-        - OPENROUTER_API_KEY
-      binaries:
-        - node
+      env: []
+      binaries: []
 ---
 
 # Food Photography (Hermes Adaptation)

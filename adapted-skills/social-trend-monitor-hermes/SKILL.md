@@ -5,8 +5,7 @@ metadata:
   hermes-agent:
     requirements:
       env: []
-      binaries:
-        - node
+      binaries: []
 ---
 
 # Social Trend Monitor (Hermes Adaptation)
