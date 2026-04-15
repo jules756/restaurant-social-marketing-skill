@@ -53,12 +53,14 @@ Captions are **keyword-first**, not personality-first. The first 125 characters 
 ```
 Good:
 "Hand-pulled rigatoni with slow-cooked pork ragu — bronze-die extruded,
-simmered 6 hours. Book at Dansken, link in bio. Stockholm's best pasta
+simmered 6 hours. Book at [Restaurant], link in bio. [City]'s best pasta
 [hook continues] …"
 
 Bad:
-"You won't BELIEVE what happened in our kitchen today 👀 [keywords at line 9]"
+"You won't BELIEVE what happened in our kitchen today [keywords at line 9]"
 ```
+
+Replace `[Restaurant]` with `config.name` from `restaurant-profile.json` at generation time, and `[City]` with `config.location`. Never hardcode a restaurant name in skill text.
 
 ### Hashtag Strategy
 

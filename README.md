@@ -32,14 +32,20 @@ Legacy v2 (single 868-line `SKILL.md`) is archived under [`legacy/`](legacy/) fo
 └──────────────────────────┬──────────────────────────────────────┘
                            │ all API calls via
 ┌──────────────────────────▼──────────────────────────────────────┐
-│                         TWO APIs ONLY                           │
+│                      PLATFORM INTEGRATION                       │
 │                                                                 │
 │  OpenRouter  (OPENROUTER_API_KEY)                               │
 │    → Image generation (model set in config.imageGen.model)     │
 │    → Chat / captions / research run on Hermes's own model       │
 │                                                                 │
-│  Composio  (COMPOSIO_API_KEY)                                   │
-│    → Google Drive, TikTok, Instagram, Facebook                  │
+│  Composio MCP  (ck_ server key registered in Hermes)            │
+│    → TikTok / Instagram / Facebook posting and analytics        │
+│    → Google Drive reads                                         │
+│    → In-agent calls only; entity scoped by the MCP server       │
+│                                                                 │
+│  Composio REST  (ak_ + userId — OPTIONAL)                       │
+│    → Used only by cron scripts (daily analytics, weekly trends) │
+│    → Skip if you don't want scheduled automation                │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ knowledge only — no extra keys
 ┌──────────────────────────▼──────────────────────────────────────┐
@@ -124,28 +130,41 @@ After this: you should see `skills/`, `adapted-skills/`, `scripts/`, `templates/
 
 ### Step 2 — Copy skills into Hermes
 
+Hermes organizes skills by category. These skills go under `social-media/`:
+
 ```bash
-mkdir -p ~/.hermes/skills
-cp -r ~/restaurant-social-marketing-skill/skills/* ~/.hermes/skills/
-cp -r ~/restaurant-social-marketing-skill/adapted-skills/* ~/.hermes/skills/
+# Remove any prior v2 install first
+rm -rf ~/.hermes/skills/social-media/restaurant-social-marketing
+rm -rf ~/.hermes/skills/social-media/restaurant-social-marketing-setup-verification
+
+# Install v3
+mkdir -p ~/.hermes/skills/social-media
+cp -r ~/restaurant-social-marketing-skill/skills/* ~/.hermes/skills/social-media/
+cp -r ~/restaurant-social-marketing-skill/adapted-skills/* ~/.hermes/skills/social-media/
 ```
+
+If your Hermes uses a different skill layout (top-level only, or a different category), override: `SKILLS_CATEGORY=""` (top-level) or `SKILLS_CATEGORY=<other>` when running `install.sh`.
 
 ### Step 3 — Add the OpenRouter key
 
-Replace `sk-or-...` with your real key:
-
 ```bash
 echo "OPENROUTER_API_KEY=sk-or-REPLACE_ME" >> ~/.hermes/.env
-```
-
-### Step 4 — Add the Composio key
-
-Replace the placeholder with your real key:
-
-```bash
-echo "COMPOSIO_API_KEY=REPLACE_ME" >> ~/.hermes/.env
 chmod 600 ~/.hermes/.env
 ```
+
+### Step 4 — Register Composio MCP in Hermes
+
+The client provides their **Composio MCP server URL** + **`ck_…` server key** from https://app.composio.dev → MCP Servers. Append to `~/.hermes/config.yaml` (create the file if missing):
+
+```yaml
+mcp_servers:
+  composio:
+    url: "<COMPOSIO_MCP_URL_FROM_CLIENT>"
+    headers:
+      Authorization: "Bearer <ck_SERVER_KEY>"
+```
+
+Inside an active Hermes chat, run `/reload-mcp` to pick up the change. See [INSTALLER.md](INSTALLER.md) for why MCP is the primary Composio path.
 
 ### Step 5 — Scaffold the client working directory
 
@@ -159,14 +178,15 @@ cp ~/restaurant-social-marketing-skill/templates/config.template.json ~/social-m
 
 ### Step 6 — Fill in `~/social-marketing/config.json` (Installer scope only)
 
-`config.json` is Installer-scope only — it holds API plumbing, never restaurant content. **Do not put restaurant name, cuisine, menu, or booking URL here.** Those come from the owner via Telegram during Step 9 onboarding and land in `restaurant-profile.json`.
+`config.json` is Installer-scope only — API plumbing, never restaurant content. **Do not put restaurant name, cuisine, menu, or booking URL here.** Those come from the owner via Telegram during onboarding and land in `restaurant-profile.json`.
 
 Set only:
-- **`telegram.botToken`** — from @BotFather.
-- **`telegram.chatId`** — the owner's Telegram chat ID (send a message to the bot first, then fetch from `https://api.telegram.org/bot<TOKEN>/getUpdates`).
-- **`platforms.<name>.enabled`** + **`platforms.<name>.composioAccountId`** — one per platform the restaurant uses (from Composio dashboard → Toolkits → Connect).
-- **`googleDrive.enabled`** + **`googleDrive.composioAccountId`** — only if the restaurant is using Drive photos. The folder is always named **`akira-agent_src`** (`googleDrive.folderName`, already set in the template). You do **not** need to provide the folder ID — `setup.js` looks for that folder on Drive and **creates it if it doesn't exist**, then writes the ID back to `config.json` automatically.
-- **`timezone`**, **`country`** — defaults are `Europe/Stockholm` / `SE`; change if needed.
+- **`telegram.botToken`** + **`telegram.chatId`** — from @BotFather + `getUpdates`.
+- **`composio.mcp.url`** + **`composio.mcp.serverKey`** — the URL and `ck_…` key you already put in `~/.hermes/config.yaml` in Step 4. Duplicate them here for the validator.
+- **`platforms.<name>.enabled`** — one boolean per platform the restaurant uses. No `ca_…` IDs needed — the MCP server handles that.
+- **`googleDrive.enabled`** — `true` if the restaurant is using Drive. `googleDrive.folderName` defaults to `akira-agent_src`. No folder ID needed.
+- (Optional) **`composio.apiKey`** + **`composio.userId`** — only if you want cron scripts (daily analytics, weekly trends) running. Skip otherwise.
+- **`timezone`**, **`country`** — defaults are `Europe/Stockholm` / `SE`.
 
 ### Step 7 — Validate (Installer only)
 
@@ -217,7 +237,8 @@ git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/re
 | Competitor research ran once                | Weekly trend cron + on-demand competitor cron   |
 | No self-improvement                         | Module C loop + cross-client aggregator         |
 | Formatted commands for promotions           | Natural language passive detection              |
-| OpenAI direct + hardcoded `gpt-image-1`     | OpenRouter + config-driven `models.image`       |
+| OpenAI direct + hardcoded `gpt-image-1`     | OpenRouter + config-driven `imageGen.model`     |
+| Composio REST with per-platform `ca_…` IDs  | Composio MCP (server key); REST optional for cron |
 
 ---
 

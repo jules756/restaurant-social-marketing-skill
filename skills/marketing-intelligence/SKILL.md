@@ -68,7 +68,7 @@ Write to `social-marketing/hook-performance.json` for every post:
   "platform": "instagram",
   "viewsDelta": 12400,
   "bookingsDelta": 3,
-  "ctaUsed": "Book at Dansken — link in bio"
+  "ctaUsed": "Book at [Restaurant] — link in bio"
 }
 ```
 

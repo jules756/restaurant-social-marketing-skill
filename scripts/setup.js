@@ -20,8 +20,7 @@
  * owner until exit code is 0.
  */
 
-const fs = require('fs');
-const { executeTool, executeProxy, findOrCreateDriveFolder, loadConfig, PLATFORMS } = require('./composio-helpers');
+const { loadConfig } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -149,128 +148,98 @@ async function checkImageModel(config) {
   }
 }
 
-async function checkComposioKey() {
-  if (!COMPOSIO_API_KEY) {
-    record('COMPOSIO_API_KEY present', false, 'Add COMPOSIO_API_KEY to ~/.hermes/.env');
+async function checkComposioMcp(config) {
+  const mcp = config.composio?.mcp;
+  if (!mcp?.url) {
+    record('composio.mcp.url set', false, 'Set composio.mcp.url (default: https://connect.composio.dev/mcp)');
+    return false;
+  }
+  if (!mcp.serverKey) {
+    record('composio.mcp.serverKey set', false, 'Set composio.mcp.serverKey (ck_… from https://app.composio.dev → MCP Servers)');
     return false;
   }
   try {
-    const res = await fetch('https://backend.composio.dev/api/v3/toolkits', {
-      headers: { 'x-api-key': COMPOSIO_API_KEY }
+    // MCP servers respond to JSON-RPC initialize. A well-formed request with a
+    // bad key should return 401/403; a valid key returns 200 with server capabilities.
+    const res = await fetch(mcp.url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${mcp.serverKey}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'setup-js', version: '1.0' }
+        }
+      })
     });
+    const ok = res.ok;
     record(
-      'Composio API key valid',
-      res.ok,
-      res.ok ? null : `Composio rejected key (${res.status}). Verify at https://app.composio.dev`
+      `Composio MCP reachable at ${mcp.url}`,
+      ok,
+      ok ? null : `MCP server returned ${res.status}. Verify the ck_ server key at https://app.composio.dev → MCP Servers.`
     );
-    return res.ok;
+    return ok;
   } catch (e) {
-    record('Composio API key valid', false, `Network error: ${e.message}`);
+    record(`Composio MCP reachable at ${mcp.url}`, false, `Network error: ${e.message}`);
     return false;
   }
 }
 
-async function checkPlatform(name, platformConfig, composioOk) {
-  if (!platformConfig?.enabled) {
-    console.log(`⏭  ${name} disabled — skipping`);
+function checkComposioRestOptional(config) {
+  // REST API is OPTIONAL — only used by cron scripts (daily-report.js,
+  // weekly-research.js). If the Installer isn't setting up cron automation,
+  // composio.apiKey + composio.userId can be blank and we note it as a
+  // warning, not a failure.
+  const rest = config.composio;
+  const hasAny = rest?.apiKey || rest?.userId;
+  const hasBoth = rest?.apiKey && rest?.userId;
+  if (!hasAny) {
+    console.log('⏭  Composio REST API not configured — cron scripts (daily-report, weekly-research) will not run. This is fine if you don\'t want scheduled automation.');
     return;
   }
-  if (!composioOk) {
-    record(`${name} connected`, false, 'Composio key not working — cannot verify platform');
-    return;
-  }
-  const accountId = platformConfig.composioAccountId;
-  if (!accountId || accountId.startsWith('ca_xxx')) {
+  if (!hasBoth) {
     record(
-      `${name} connected`,
+      'composio.apiKey + composio.userId both set',
       false,
-      `Set platforms.${name}.composioAccountId in config.json. Connect the account at https://app.composio.dev → Toolkits → ${name} → Connect.`
+      'For cron scripts both composio.apiKey (ak_…) and composio.userId are required. Either set both or clear both to disable cron.'
     );
     return;
   }
-  const userId = `setup_check_${Date.now()}`;
-  const testTool = {
-    tiktok: PLATFORMS.tiktok.userStatsTool,
-    instagram: PLATFORMS.instagram.userInsightsTool,
-    facebook: PLATFORMS.facebook.pageInsightsTool
-  }[name];
-  try {
-    await executeTool(COMPOSIO_API_KEY, accountId, userId, testTool, {});
-    record(`${name} connected (${accountId})`, true);
-  } catch (e) {
-    record(
-      `${name} connected (${accountId})`,
-      false,
-      `Test call failed: ${e.message}. Reconnect at https://app.composio.dev → Toolkits → ${name}`
-    );
-  }
+  record('Composio REST (for cron) configured', true);
 }
 
-async function checkGoogleDrive(config, composioOk, configPath) {
+async function checkPlatformEnabled(name, platformConfig) {
+  if (!platformConfig?.enabled) {
+    console.log(`⏭  ${name} disabled in config.platforms`);
+    return;
+  }
+  // Under MCP-first, we don't pre-validate the platform connection with REST.
+  // The MCP server holds the connection. At post time, the skill calls the
+  // MCP tool directly and surfaces any failure. This keeps setup lean.
+  record(`${name} enabled — will post via Composio MCP`, true);
+}
+
+async function checkGoogleDriveEnabled(config) {
   const drive = config.googleDrive;
   if (!drive?.enabled) {
-    console.log('⏭  Google Drive disabled — skipping');
+    console.log('⏭  Google Drive disabled in config.googleDrive');
     return;
   }
-  if (!composioOk) {
-    record('Google Drive connected', false, 'Composio key not working — cannot verify Drive');
+  if (!drive.folderName) {
+    record('googleDrive.folderName set', false, 'Set googleDrive.folderName in config.json (default: "akira-agent_src")');
     return;
   }
-  if (!drive.composioAccountId || drive.composioAccountId.startsWith('ca_gdrive_xxx')) {
-    record('Google Drive connected', false, 'Set googleDrive.composioAccountId in config.json');
-    return;
-  }
-
-  // Auto-resolve or auto-create folderId from folderName. The Installer only
-  // has to know the folder NAME (akira-agent_src by convention) — setup.js
-  // finds it on Drive (or creates it if missing), then writes the ID back to
-  // config.json for future runs.
-  if (!drive.folderId) {
-    if (!drive.folderName) {
-      record('Google Drive folder set', false, 'Set googleDrive.folderName in config.json (default: "akira-agent_src")');
-      return;
-    }
-    console.log(`   Searching Drive for folder "${drive.folderName}" (will create if missing)...`);
-    try {
-      const { id, created } = await findOrCreateDriveFolder(
-        COMPOSIO_API_KEY,
-        drive.composioAccountId,
-        drive.folderName
-      );
-      drive.folderId = id;
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
-      if (created) {
-        console.log(`   Created new Drive folder "${drive.folderName}" (${id}) — written back to ${configPath}`);
-        console.log(`   Tell the owner: drop dish photos into the "${drive.folderName}" folder in their Drive.`);
-      } else {
-        console.log(`   Resolved folderId ${id} — written back to ${configPath}`);
-      }
-    } catch (e) {
-      record(
-        `Google Drive folder "${drive.folderName}" ready`,
-        false,
-        `Could not find or create folder via Composio: ${e.message}. Check that the Composio Drive account has write access.`
-      );
-      return;
-    }
-  }
-
-  try {
-    await executeTool(
-      COMPOSIO_API_KEY,
-      drive.composioAccountId,
-      `setup_check_${Date.now()}`,
-      PLATFORMS.googledrive.listFilesTool,
-      { folder_id: drive.folderId, page_size: 1 }
-    );
-    record(`Google Drive folder "${drive.folderName || drive.folderId}" reachable`, true);
-  } catch (e) {
-    record(
-      'Google Drive folder reachable',
-      false,
-      `List call failed: ${e.message}. Verify folder sharing with the connected Drive account.`
-    );
-  }
+  // Folder discovery / creation happens at first use via the MCP tool
+  // GOOGLEDRIVE_LIST_FILES. The orchestrator handles that on the first
+  // `generate post` or manual sync command, not at setup time.
+  record(`Google Drive enabled — folder "${drive.folderName}" will be found/created at first use`, true);
 }
 
 (async () => {
@@ -282,12 +251,13 @@ async function checkGoogleDrive(config, composioOk, configPath) {
   await checkTelegram(config);
   const openrouterOk = await checkOpenRouterKey();
   if (openrouterOk) await checkImageModel(config);
-  const composioOk = await checkComposioKey();
+  await checkComposioMcp(config);
+  checkComposioRestOptional(config);
 
   for (const name of ['tiktok', 'instagram', 'facebook']) {
-    await checkPlatform(name, config.platforms?.[name], composioOk);
+    await checkPlatformEnabled(name, config.platforms?.[name]);
   }
-  await checkGoogleDrive(config, composioOk, configPath);
+  await checkGoogleDriveEnabled(config);
 
   const failed = checks.filter((c) => !c.ok);
   console.log('\n' + '─'.repeat(60));

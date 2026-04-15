@@ -4,16 +4,23 @@
     "botToken": "",
     "chatId": ""
   },
+  "composio": {
+    "_comment": "Primary integration is Composio MCP. The MCP server key (ck_…) is set up per-client in https://app.composio.dev → MCP Servers, and registered in Hermes via ~/.hermes/config.yaml (see INSTALLER.md). The REST API key + userId are OPTIONAL and only used by cron scripts (daily-report.js, weekly-research.js) that run outside the agent loop.",
+    "mcp": {
+      "url": "https://connect.composio.dev/mcp",
+      "serverKey": ""
+    },
+    "apiKey": "",
+    "userId": ""
+  },
   "platforms": {
-    "instagram": { "enabled": false, "composioAccountId": "ca_xxxxx" },
-    "tiktok":    { "enabled": false, "composioAccountId": "ca_xxxxx" },
-    "facebook":  { "enabled": false, "composioAccountId": "ca_xxxxx" }
+    "instagram": { "enabled": false },
+    "tiktok":    { "enabled": false },
+    "facebook":  { "enabled": false }
   },
   "googleDrive": {
     "enabled": false,
     "folderName": "akira-agent_src",
-    "folderId": "",
-    "composioAccountId": "ca_gdrive_xxxxx",
     "localCachePath": "social-marketing/photos/",
     "inventoryPath": "social-marketing/photo-inventory.json"
   },

@@ -75,6 +75,22 @@ Scripts that need a restaurant name, cuisine, or location read from `restaurant-
 
 **Max 7 questions. One at a time. Conversational. Under 10 minutes.**
 
+### First-Contact Rules (Product Hygiene)
+
+This skill is deployed across many restaurants. Every install is a fresh client. You **do not know the restaurant's name until Question 2 tells you**, and you must never invent it from prior context, caches, or example text.
+
+**First message on Telegram — no restaurant name:**
+> *"Hi! Let's set up your marketing. Which language should we talk in?"*
+
+**Do NOT:**
+- Greet with a specific restaurant name (e.g. *"Hi! <Name> marketing setup"*) — you don't know the name yet, and inserting a placeholder restaurant name is just as bad as inventing one.
+- Reuse names from earlier conversations, prior installs, or SKILL documentation examples (names in examples like `[Restaurant]` are placeholders — never literal names).
+- Refer to the restaurant by any specific name before Question 2 answers it.
+
+**Do:**
+- Read `social-marketing/restaurant-profile.json` first. If it already has a `name` (returning owner, continuing a session), greet using that name. If the file doesn't exist or `name` is empty, use generic phrasing.
+- After Question 2 captures the name, use it naturally from then on.
+
 The goal is to collect enough restaurant DNA to produce good content on day one. Nothing technical. Nothing the owner would have to look up.
 
 1. **Language.** Ask first in English: *"What language should we talk in?"* Switch immediately to their choice and stay there.
@@ -116,7 +132,7 @@ Save every answer to `social-marketing/restaurant-profile.json` as you collect i
 1. Call `content-preparation` → returns slides + overlays + caption.
 2. **Send the images to Telegram immediately.** Never say "done" without attaching files. If the owner says *"show me"*, send — don't ask.
 3. Confirm: *"Ready to post?"*
-4. On yes, post via Composio to every platform enabled in `config.platforms`.
+4. On yes, post via **Composio MCP tools** (see "Composio Integration" below) to every platform enabled in `config.platforms`.
 5. TikTok: post as draft and remind — *"Added the draft to your TikTok inbox. Pick a trending sound before publishing."*
 
 ### `generate pool`
@@ -360,6 +376,24 @@ This skill orchestrates. It does not duplicate work.
 - Trend research methodology → **knowledge from `social-trend-monitor-hermes`**.
 
 If you find yourself writing image prompts or analytics logic inside this skill, stop. That belongs elsewhere.
+
+---
+
+## Composio Integration (MCP-First)
+
+All in-agent work with Composio — posting to TikTok / Instagram / Facebook, reading Drive files during conversation, pulling realtime analytics — goes through the **Composio MCP server** registered in Hermes. The MCP server handles entity / user scoping internally using the `ck_` server key, so there is no `user_id` or `connected_account_id` plumbing at the skill level.
+
+**What this means for you:**
+
+- To post: call the Composio MCP tool directly, e.g. `INSTAGRAM_POST_IG_USER_MEDIA` or `TIKTOK_POST_PHOTO`. Tool names come from the Composio MCP server's tool list, which Hermes loads on startup.
+- To pull Drive photos: call `GOOGLEDRIVE_LIST_FILES` / `GOOGLEDRIVE_DOWNLOAD_FILE` via MCP.
+- To check platform stats during conversation: call the platform-specific insight tool via MCP.
+
+**Fallback — cron scripts only:**
+
+`scripts/daily-report.js` and `scripts/weekly-research.js` run outside the Hermes agent loop (cron). Those use Composio's REST API directly via `composio-helpers.js`. The REST path needs `config.composio.apiKey` and `config.composio.userId` — both are optional and only populated if the Installer wants cron-based automation.
+
+**Do not mix the two paths in the same action.** If you're in the agent loop, use MCP. If you're writing a cron script, use REST.
 
 ---
 

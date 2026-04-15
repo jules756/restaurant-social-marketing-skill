@@ -18,7 +18,11 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_DIR="${HERMES_HOME:-$HOME/.hermes}"
 ENV_FILE="$HERMES_DIR/.env"
-SKILLS_DIR="$HERMES_DIR/skills"
+# Hermes organizes skills by category. Restaurant marketing lives under
+# social-media/. Override via SKILLS_CATEGORY=<other> if your Hermes uses a
+# different layout, or set it to "" to install at the top level.
+SKILLS_CATEGORY="${SKILLS_CATEGORY:-social-media}"
+SKILLS_DIR="$HERMES_DIR/skills${SKILLS_CATEGORY:+/$SKILLS_CATEGORY}"
 CLIENT_DIR="${CLIENT_DIR:-social-marketing}"
 
 echo "=== Restaurant Social Marketing Installer ==="
@@ -27,9 +31,15 @@ echo "Hermes:  $HERMES_DIR"
 echo "Client:  $CLIENT_DIR"
 echo
 
-# 1. Copy skills
+# 1. Copy skills — remove any prior v2 install in the same category first
 mkdir -p "$SKILLS_DIR"
-echo "Copying skills to $SKILLS_DIR …"
+for stale in restaurant-social-marketing restaurant-social-marketing-setup-verification; do
+  if [[ -d "$SKILLS_DIR/$stale" ]]; then
+    echo "Removing stale v2 skill: $SKILLS_DIR/$stale"
+    rm -rf "$SKILLS_DIR/$stale"
+  fi
+done
+echo "Copying v3 skills to $SKILLS_DIR …"
 cp -r "$REPO_DIR/skills/"* "$SKILLS_DIR/"
 cp -r "$REPO_DIR/adapted-skills/"* "$SKILLS_DIR/"
 echo "  ✅ skills copied"
@@ -62,7 +72,21 @@ ensure_key COMPOSIO_API_KEY   "Composio API key"
 # 3. Client working dir
 FRESH_CONFIG=0
 if [[ -d "$CLIENT_DIR" ]]; then
-  echo "  ℹ  $CLIENT_DIR already exists — leaving structure in place"
+  echo "  ℹ  $CLIENT_DIR already exists."
+  # Prior-client-data hygiene: a restaurant-profile.json from a previous client
+  # must never leak into a new install. Prompt before wiping.
+  if [[ -f "$CLIENT_DIR/restaurant-profile.json" ]]; then
+    echo
+    read -r -p "  Prior restaurant-profile.json found. This is a new client install — wipe client data (profile + knowledge-base)? [y/N] " wipe
+    if [[ "$wipe" == "y" || "$wipe" == "Y" ]]; then
+      rm -f "$CLIENT_DIR/restaurant-profile.json"
+      rm -rf "$CLIENT_DIR/knowledge-base"
+      mkdir -p "$CLIENT_DIR/knowledge-base"
+      echo "  ✅ Prior client data wiped."
+    else
+      echo "  ℹ  Keeping prior client data. (If you're installing for a new restaurant, re-run and choose y.)"
+    fi
+  fi
 else
   echo "Creating $CLIENT_DIR …"
   mkdir -p "$CLIENT_DIR"/{photos/{dishes,ambiance,kitchen,exterior,unsorted},posts,reports/trend-reports,reports/competitor,knowledge-base}
