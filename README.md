@@ -67,37 +67,42 @@ If a Telegram message from the agent requires technical knowledge to answer, tha
 
 ## Repository Layout
 
+**What Hermes loads** (copied into `~/.hermes/skills/` by `install.sh`):
+
 ```
-restaurant-social-marketing-skill/
-├── skills/                           ← custom skills built for Hermes
-│   ├── restaurant-marketing/SKILL.md
-│   ├── content-preparation/SKILL.md
-│   └── marketing-intelligence/SKILL.md
-│
-├── adapted-skills/                   ← external skills, API calls stripped
-│   ├── food-photography-hermes/SKILL.md
-│   ├── social-media-seo-hermes/SKILL.md
-│   └── social-trend-monitor-hermes/SKILL.md
-│
-├── scripts/                          ← Node.js scripts (next phase)
-│   ├── setup.js                      ← Phase 0 validation
-│   ├── drive-sync.js
-│   ├── drive-inventory.js
-│   ├── generate-slides.js
-│   ├── add-text-overlay.js
-│   ├── daily-report.js
-│   ├── weekly-research.js
-│   ├── competitor-research.js
-│   └── aggregator.js
-│
-├── templates/
-│   └── config.template.json          ← blank config for new deployments
-│
-├── docs/
-│   └── PRD-v3.md                     ← design reference
-│
-└── legacy/                           ← archived v2 skill + docs
+skills/                           ← custom skills for Hermes
+├── restaurant-marketing/SKILL.md
+├── content-preparation/SKILL.md
+└── marketing-intelligence/SKILL.md
+
+adapted-skills/                   ← external skills, API calls stripped
+├── food-photography-hermes/SKILL.md
+├── social-media-seo-hermes/SKILL.md
+└── social-trend-monitor-hermes/SKILL.md
+
+scripts/                          ← Node.js scripts (called by skills at runtime)
+├── setup.js                      ← Phase 0 validation
+├── drive-sync.js
+├── drive-inventory.js
+├── generate-slides.js
+├── add-text-overlay.js
+├── daily-report.js
+├── weekly-research.js
+├── competitor-research.js
+└── aggregator.js
+
+templates/
+└── config.template.json          ← blank config for new deployments
 ```
+
+**Repo-internal only** — never copied into Hermes, never loaded as skills:
+
+```
+docs/      ← design reference (PRD, OpenRouter notes). Do NOT copy to ~/.hermes/skills/.
+legacy/    ← archived v2 skill + scripts. Do NOT copy to ~/.hermes/skills/.
+```
+
+`install.sh` only copies `skills/*` and `adapted-skills/*`. If doing a manual install, copy *only* those two directories — loading `docs/` or `legacy/` will confuse Hermes with stale or non-skill content.
 
 ---
 
