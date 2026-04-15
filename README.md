@@ -35,7 +35,7 @@ Legacy v2 (single 868-line `SKILL.md`) is archived under [`legacy/`](legacy/) fo
 │                         TWO APIs ONLY                           │
 │                                                                 │
 │  OpenRouter  (OPENROUTER_API_KEY)                               │
-│    → LLM calls + image generation (openai/gpt-image-1.5)        │
+│    → LLM calls + image generation (models set in config.models) │
 │                                                                 │
 │  Composio  (COMPOSIO_API_KEY)                                   │
 │    → Google Drive, TikTok, Instagram, Facebook                  │
@@ -214,7 +214,7 @@ git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/re
 | Competitor research ran once                | Weekly trend cron + on-demand competitor cron   |
 | No self-improvement                         | Module C loop + cross-client aggregator         |
 | Formatted commands for promotions           | Natural language passive detection              |
-| OpenAI direct + `gpt-image-1`               | OpenRouter + `gpt-image-1.5`                    |
+| OpenAI direct + hardcoded `gpt-image-1`     | OpenRouter + config-driven `models.image`       |
 
 ---
 

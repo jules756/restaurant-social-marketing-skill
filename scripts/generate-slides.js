@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generate slideshow images via OpenRouter (openai/gpt-image-1.5).
+ * Generate slideshow images via OpenRouter. Model comes from config.models.image.
  *
  * Selects approach per slide based on photo-inventory.json:
  *   - If a matching Drive photo exists → img2img (OpenRouter images/edits).
@@ -53,10 +53,10 @@ if (!OPENROUTER_API_KEY) {
 
 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 const prompts = JSON.parse(fs.readFileSync(promptsPath, 'utf-8'));
-const model = config.imageGen?.model || 'openai/gpt-image-1.5';
+const model = config.models?.image || config.imageGen?.model;
 
-if (!model.includes('1.5')) {
-  console.error(`Refusing to run with model "${model}". Use openai/gpt-image-1.5 — gpt-image-1 produces visibly AI food.`);
+if (!model) {
+  console.error('No image model configured. Set config.models.image in config.json.');
   process.exit(1);
 }
 

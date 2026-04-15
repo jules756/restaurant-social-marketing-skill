@@ -23,9 +23,16 @@
     "bookingTracking": { "method": "manual", "dailyBaseline": 0 },
     "utmSource": "social"
   },
+  "models": {
+    "_comment": "Single source of truth for every model used. Update here when new models ship — no code changes needed. All models go through OpenRouter (https://openrouter.ai/models).",
+    "image": "google/gemini-2.5-flash-image-preview",
+    "vision": "openai/gpt-4o-mini",
+    "chat": "anthropic/claude-3.5-sonnet",
+    "caption": "anthropic/claude-3.5-sonnet",
+    "research": "anthropic/claude-3.5-sonnet"
+  },
   "imageGen": {
-    "provider": "openrouter",
-    "model": "openai/gpt-image-1.5"
+    "provider": "openrouter"
   },
   "timezone": "Europe/Stockholm",
   "country": "SE",

@@ -11,7 +11,7 @@
  * Checks (every line reports ✅ or ❌ with a fix instruction):
  *   1. node v18+
  *   2. OPENROUTER_API_KEY set and working
- *   3. openai/gpt-image-1.5 accessible via OpenRouter
+ *   3. Configured image model (config.models.image) accessible via OpenRouter
  *   4. COMPOSIO_API_KEY set and working
  *   5. Each enabled platform has a working connected_account_id
  *   6. Google Drive connected and folder reachable (if enabled)
@@ -98,9 +98,14 @@ async function checkOpenRouterKey() {
   }
 }
 
-async function checkImageModel() {
+async function checkImageModel(config) {
+  const imageModel = config.models?.image;
+  if (!imageModel) {
+    record('config.models.image set', false, 'Set config.models.image to an OpenRouter image model (e.g. google/gemini-2.5-flash-image-preview)');
+    return;
+  }
   if (!OPENROUTER_API_KEY) {
-    record('openai/gpt-image-1.5 reachable', false, 'OpenRouter key missing — cannot check');
+    record(`${imageModel} reachable`, false, 'OpenRouter key missing — cannot check');
     return;
   }
   try {
@@ -108,19 +113,19 @@ async function checkImageModel() {
       headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}` }
     });
     if (!res.ok) {
-      record('openai/gpt-image-1.5 reachable', false, `OpenRouter returned ${res.status}`);
+      record(`${imageModel} reachable`, false, `OpenRouter returned ${res.status}`);
       return;
     }
     const data = await res.json();
     const models = (data.data || []).map((m) => m.id);
-    const found = models.includes('openai/gpt-image-1.5');
+    const found = models.includes(imageModel);
     record(
-      'openai/gpt-image-1.5 reachable',
+      `${imageModel} reachable`,
       found,
-      found ? null : 'Model not listed in OpenRouter catalog. Check https://openrouter.ai/models — may require account tier upgrade.'
+      found ? null : `Model not in OpenRouter catalog. Browse https://openrouter.ai/models and update config.models.image.`
     );
   } catch (e) {
-    record('openai/gpt-image-1.5 reachable', false, `Error: ${e.message}`);
+    record(`${imageModel} reachable`, false, `Error: ${e.message}`);
   }
 }
 
@@ -224,7 +229,7 @@ async function checkGoogleDrive(config, composioOk) {
   await checkNode();
   await checkTelegram(config);
   const openrouterOk = await checkOpenRouterKey();
-  if (openrouterOk) await checkImageModel();
+  if (openrouterOk) await checkImageModel(config);
   const composioOk = await checkComposioKey();
 
   for (const name of ['tiktok', 'instagram', 'facebook']) {

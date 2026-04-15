@@ -49,7 +49,7 @@ Never reverse this order. Photo inventory is checked **before** prompt construct
 
 ## Image Generation by Scenario
 
-All generation calls go through **OpenRouter** using `openai/gpt-image-1.5`. Never `gpt-image-1`. Never a direct OpenAI endpoint except as a verified fallback for `images/edits` if OpenRouter support is unavailable (verify before building — see `docs/openrouter-notes.md`).
+All generation calls go through **OpenRouter** using whatever model is configured in `config.models.image` (see `templates/config.template.json`). The default is an OpenRouter-available image model capable of both text-to-image and image-to-image edits. The Installer updates this one field when a better model ships — no code changes. See `docs/openrouter-notes.md` for endpoint details and the img2img fallback contract.
 
 ### Real photo exists → img2img (always preferred)
 
@@ -58,7 +58,7 @@ Even a blurry phone photo outperforms pure text-to-image. The model understands 
 ```
 photo from Drive
   → pass as image reference
-  → gpt-image-1.5 via OpenRouter `images/edits`
+  → configured image model via OpenRouter `images/edits`
   → polished version that looks like YOUR food, not generic AI food
 ```
 

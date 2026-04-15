@@ -76,7 +76,7 @@ if (menuPath && fs.existsSync(menuPath)) {
   }
 }
 
-const VISION_MODEL = 'openai/gpt-4o-mini';
+const VISION_MODEL = config.models?.vision || 'openai/gpt-4o-mini';
 
 async function classifyPhoto(filePath) {
   const buf = fs.readFileSync(filePath);
