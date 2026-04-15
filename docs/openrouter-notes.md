@@ -14,26 +14,67 @@ Vision classification in `drive-inventory.js` is an internal implementation deta
 |--------------------------|-------------------------------|-------------------------------------------|
 | `config.imageGen.model`  | `scripts/generate-slides.js`  | `google/gemini-2.5-flash-image-preview`   |
 
-Swap by editing `social-marketing/config.json`. Browse the live catalog at https://openrouter.ai/models — only models listed there work.
+Swap by editing `social-marketing/config.json`. Browse the live catalog at https://openrouter.ai/models — only models listed there with an image output modality work.
 
-## Endpoints Used
+## How Image Generation Works
+
+Both txt2img and img2img go through the **chat completions endpoint with image modality output** — the native format for Gemini image models on OpenRouter. The OpenAI-style `/images/generations` and `/images/edits` endpoints are NOT used by this code.
 
 | Endpoint                                                 | Used by                              |
 |----------------------------------------------------------|--------------------------------------|
 | `GET  /api/v1/models`                                    | `scripts/setup.js` (catalog check)   |
-| `POST /api/v1/chat/completions`                          | `scripts/drive-inventory.js` (internal vision classification) |
-| `POST /api/v1/images/generations`                        | `scripts/generate-slides.js` (txt2img) |
-| `POST /api/v1/images/edits`                              | `scripts/generate-slides.js` (img2img) |
+| `POST /api/v1/chat/completions`                          | `scripts/generate-slides.js` (txt2img + img2img) and `scripts/drive-inventory.js` (internal vision classification) |
 
-## img2img Availability
+Request shape for txt2img:
 
-Not every image model on OpenRouter supports the `images/edits` endpoint. Behavior:
+```json
+{
+  "model": "google/gemini-2.5-flash-image-preview",
+  "messages": [
+    { "role": "user", "content": [{ "type": "text", "text": "<prompt>" }] }
+  ],
+  "modalities": ["image", "text"]
+}
+```
 
-1. `generate-slides.js` attempts `images/edits` when a reference photo is selected from Drive inventory.
-2. If OpenRouter returns an error (model doesn't support the endpoint, or the endpoint is unavailable), the script logs a warning and falls back to `images/generations` (txt2img) for that slide. The post is never blocked.
-3. If img2img is consistently failing, either swap to a model that supports edits (Gemini image models do; some Flux variants do not) or live with txt2img.
+For img2img, the reference photo is attached as a second content part:
 
-Test img2img end-to-end by running a single-slide generate with `--dish` pointing at a dish that has a `bestFile` in `photo-inventory.json`.
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "<prompt>" },
+        { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,..." } }
+      ]
+    }
+  ],
+  "modalities": ["image", "text"]
+}
+```
+
+Aspect ratio (portrait 9:16 for TikTok, portrait 4:5 for Instagram, landscape 16:9 for Facebook) is hinted **inside the prompt text**, not via a `size` parameter — chat-completions image models don't accept one.
+
+## Response Parsing
+
+OpenRouter's image-modality response shape varies slightly between providers. `generate-slides.js` probes three shapes in order:
+
+1. `message.images[0].image_url.url` as a `data:image/...;base64,...` URL.
+2. `message.content[]` containing an `image_url` part with a data URL.
+3. `message.content` as a string containing an embedded `data:image/...;base64,...` URL.
+
+First match wins. If none matches, the script errors out clearly — usually indicating the configured model doesn't support the image output modality.
+
+## Swapping Models
+
+If `google/gemini-2.5-flash-image-preview` stops working or a better one ships:
+
+1. Browse https://openrouter.ai/models and filter for image-output models.
+2. Update `config.imageGen.model` in `social-marketing/config.json`.
+3. Re-run `scripts/setup.js --config social-marketing/config.json` to confirm the new model is in the OpenRouter catalog.
+
+No code changes required — the script is model-agnostic within the chat-completions-with-image-modality family.
 
 ## Headers
 

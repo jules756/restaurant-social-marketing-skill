@@ -58,7 +58,7 @@ Even a blurry phone photo outperforms pure text-to-image. The model understands 
 ```
 photo from Drive
   → pass as image reference
-  → configured image model via OpenRouter `images/edits`
+  → configured image model via OpenRouter chat completions (image modality)
   → polished version that looks like YOUR food, not generic AI food
 ```
 
