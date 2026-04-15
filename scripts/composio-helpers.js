@@ -108,7 +108,8 @@ const PLATFORMS = {
   googledrive: {
     toolkit: 'googledrive',
     listFilesTool: 'GOOGLEDRIVE_LIST_FILES',
-    downloadFileTool: 'GOOGLEDRIVE_DOWNLOAD_FILE'
+    downloadFileTool: 'GOOGLEDRIVE_DOWNLOAD_FILE',
+    createFolderTool: 'GOOGLEDRIVE_CREATE_FOLDER'
   }
 };
 
@@ -154,10 +155,64 @@ async function findDriveFolderByName(apiKey, connectedAccountId, folderName) {
   return null;
 }
 
+/**
+ * Create a folder at the root of the connected Drive. Returns the new folder's
+ * Drive file ID, or throws if creation fails. Different Composio tool versions
+ * accept the folder name under different parameter keys — try common shapes.
+ */
+async function createDriveFolder(apiKey, connectedAccountId, folderName) {
+  const userId = `drive_folder_create_${Date.now()}`;
+  const attempts = [
+    { name: folderName },
+    { folder_name: folderName },
+    { title: folderName }
+  ];
+
+  let lastError;
+  for (const args of attempts) {
+    try {
+      const result = await executeTool(
+        apiKey,
+        connectedAccountId,
+        userId,
+        PLATFORMS.googledrive.createFolderTool,
+        args
+      );
+      const id = result.data?.id || result.id || result.data?.file?.id;
+      if (id) return id;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw new Error(
+    `createDriveFolder("${folderName}") failed. Last error: ${lastError?.message || 'no id in response'}`
+  );
+}
+
+/**
+ * Find the folder by name, or create it if missing. Returns the folder ID.
+ */
+async function findOrCreateDriveFolder(apiKey, connectedAccountId, folderName) {
+  const existing = await findDriveFolderByName(apiKey, connectedAccountId, folderName);
+  if (existing) return { id: existing, created: false };
+  const created = await createDriveFolder(apiKey, connectedAccountId, folderName);
+  return { id: created, created: true };
+}
+
 function loadConfig(configPath) {
   const resolved = path.resolve(configPath);
   if (!fs.existsSync(resolved)) throw new Error(`Config file not found: ${resolved}`);
   return JSON.parse(fs.readFileSync(resolved, 'utf-8'));
 }
 
-module.exports = { executeTool, executeProxy, uploadFile, findDriveFolderByName, PLATFORMS, BASE_URL, loadConfig };
+module.exports = {
+  executeTool,
+  executeProxy,
+  uploadFile,
+  findDriveFolderByName,
+  createDriveFolder,
+  findOrCreateDriveFolder,
+  PLATFORMS,
+  BASE_URL,
+  loadConfig
+};

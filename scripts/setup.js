@@ -21,7 +21,7 @@
  */
 
 const fs = require('fs');
-const { executeTool, executeProxy, findDriveFolderByName, loadConfig, PLATFORMS } = require('./composio-helpers');
+const { executeTool, executeProxy, findOrCreateDriveFolder, loadConfig, PLATFORMS } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -221,27 +221,38 @@ async function checkGoogleDrive(config, composioOk, configPath) {
     return;
   }
 
-  // Auto-resolve folderId by name if missing. The Installer only has to know
-  // the folder NAME (akira-agent_src by convention) — setup.js finds the ID
-  // via Composio and writes it back to config.json for future runs.
+  // Auto-resolve or auto-create folderId from folderName. The Installer only
+  // has to know the folder NAME (akira-agent_src by convention) — setup.js
+  // finds it on Drive (or creates it if missing), then writes the ID back to
+  // config.json for future runs.
   if (!drive.folderId) {
     if (!drive.folderName) {
       record('Google Drive folder set', false, 'Set googleDrive.folderName in config.json (default: "akira-agent_src")');
       return;
     }
-    console.log(`   Searching Drive for folder "${drive.folderName}"...`);
-    const foundId = await findDriveFolderByName(COMPOSIO_API_KEY, drive.composioAccountId, drive.folderName);
-    if (!foundId) {
+    console.log(`   Searching Drive for folder "${drive.folderName}" (will create if missing)...`);
+    try {
+      const { id, created } = await findOrCreateDriveFolder(
+        COMPOSIO_API_KEY,
+        drive.composioAccountId,
+        drive.folderName
+      );
+      drive.folderId = id;
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+      if (created) {
+        console.log(`   Created new Drive folder "${drive.folderName}" (${id}) — written back to ${configPath}`);
+        console.log(`   Tell the owner: drop dish photos into the "${drive.folderName}" folder in their Drive.`);
+      } else {
+        console.log(`   Resolved folderId ${id} — written back to ${configPath}`);
+      }
+    } catch (e) {
       record(
-        `Google Drive folder "${drive.folderName}" found`,
+        `Google Drive folder "${drive.folderName}" ready`,
         false,
-        `No folder named "${drive.folderName}" is reachable by the connected Drive account. Ensure the folder exists and is shared with that account, or create it.`
+        `Could not find or create folder via Composio: ${e.message}. Check that the Composio Drive account has write access.`
       );
       return;
     }
-    drive.folderId = foundId;
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
-    console.log(`   Resolved folderId ${foundId} — written back to ${configPath}`);
   }
 
   try {

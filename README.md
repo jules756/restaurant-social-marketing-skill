@@ -165,7 +165,7 @@ Set only:
 - **`telegram.botToken`** — from @BotFather.
 - **`telegram.chatId`** — the owner's Telegram chat ID (send a message to the bot first, then fetch from `https://api.telegram.org/bot<TOKEN>/getUpdates`).
 - **`platforms.<name>.enabled`** + **`platforms.<name>.composioAccountId`** — one per platform the restaurant uses (from Composio dashboard → Toolkits → Connect).
-- **`googleDrive.enabled`** + **`googleDrive.composioAccountId`** — only if the restaurant is using Drive photos. The folder is always named **`akira-agent_src`** (`googleDrive.folderName`, already set in the template). You do **not** need to provide the folder ID — `setup.js` searches Drive for that folder name and writes the ID back to `config.json` automatically.
+- **`googleDrive.enabled`** + **`googleDrive.composioAccountId`** — only if the restaurant is using Drive photos. The folder is always named **`akira-agent_src`** (`googleDrive.folderName`, already set in the template). You do **not** need to provide the folder ID — `setup.js` looks for that folder on Drive and **creates it if it doesn't exist**, then writes the ID back to `config.json` automatically.
 - **`timezone`**, **`country`** — defaults are `Europe/Stockholm` / `SE`; change if needed.
 
 ### Step 7 — Validate (Installer only)

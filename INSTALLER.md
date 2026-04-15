@@ -100,7 +100,7 @@ The template already contains `models`, `imageGen.provider`, `analytics`, `timez
 
 For any platform the restaurant is **not** using, leave `enabled: false` and the placeholder `ca_xxxxx` value.
 
-`googleDrive.folderId` is auto-discovered by `setup.js` in Step 6 — do not ask the human for it. If you don't know the folder ID, leave the key absent and set `folderName` to `akira-agent_src` (the convention). The validator will search Drive for that folder and write the ID back to `config.json`.
+`googleDrive.folderId` is auto-discovered (or auto-created) by `setup.js` in Step 6 — do not ask the human for it. If you don't know the folder ID, leave the key absent and set `folderName` to `akira-agent_src` (the convention). The validator will search Drive for that folder; if it doesn't exist, the validator creates it using the connected Drive account, then writes the new ID back to `config.json`.
 
 **If `config.imageGen.model` already reads `google/gemini-2.5-flash-image-preview`, leave it.** Do not change it to `google/gemini-3.1-flash-image-preview` or anything else unless the human explicitly hands you a different model name.
 
