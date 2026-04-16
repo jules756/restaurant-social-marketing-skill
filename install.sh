@@ -55,17 +55,16 @@ cp -r "$REPO_DIR/skills/"* "$SKILLS_DIR/"
 cp -r "$REPO_DIR/adapted-skills/"* "$SKILLS_DIR/"
 echo "  ✅ skills copied"
 
-# 2. Ensure @composio/core is installed globally
-if node -e "require.resolve('@composio/core')" 2>/dev/null; then
-  echo "  ✅ @composio/core SDK already installed"
-else
-  echo "Installing @composio/core globally …"
-  if ! npm install -g @composio/core; then
-    echo "  ❌ npm install -g @composio/core failed. Install Node.js v18+ and re-run." >&2
+# 2. Ensure @composio/core is installed in the repo (local install, no sudo).
+#    Avoids /usr/local permission headaches from npm -g on macOS.
+if [[ ! -d "$REPO_DIR/node_modules/@composio/core" ]]; then
+  echo "Installing repo dependencies (@composio/core) …"
+  if ! (cd "$REPO_DIR" && npm install --silent); then
+    echo "  ❌ npm install failed in $REPO_DIR. Install Node.js v18+ and re-run." >&2
     exit 1
   fi
-  echo "  ✅ @composio/core installed"
 fi
+echo "  ✅ @composio/core installed at $REPO_DIR/node_modules/@composio/core"
 
 # 3. Client working dir
 FRESH_CONFIG=0

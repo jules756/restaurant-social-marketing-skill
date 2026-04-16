@@ -72,8 +72,9 @@ async function checkNode() {
 }
 
 async function checkComposioSdk() {
-  // The SDK is not used by this script, but its global presence is a product
+  // SDK is not used by this script, but its presence is a product
   // prerequisite for provisioning tooling and future script migration.
+  // Resolves from the repo's local node_modules (installed by install.sh).
   try {
     require.resolve('@composio/core');
     record('@composio/core SDK reachable', true);
@@ -81,7 +82,7 @@ async function checkComposioSdk() {
     record(
       '@composio/core SDK reachable',
       false,
-      'Run: npm install -g @composio/core'
+      'Run: cd ~/restaurant-social-marketing-skill && npm install'
     );
   }
 }

@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Lockfiles are fine to track — prefer determinism for each client VM.
+# Keep package-lock.json out of .gitignore.
+
+# OS + editor detritus
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Runtime / log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Per-client runtime state (should live at $HOME/social-marketing, never in the repo)
+social-marketing/
