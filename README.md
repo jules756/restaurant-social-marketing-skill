@@ -30,24 +30,20 @@ Legacy v2 (single 868-line `SKILL.md`) is archived under [`legacy/`](legacy/) fo
 │                                   competitor research, cross-   │
 │                                   client aggregation.           │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │ all external calls authorized by
+                           │ all external calls via
 ┌──────────────────────────▼──────────────────────────────────────┐
-│           COMPOSIO IS THE ONLY CREDENTIAL STORE                 │
+│        COMPOSIO SDK — THE ONLY CREDENTIAL ON THE VM             │
 │                                                                 │
-│  One Composio Project per restaurant (provisioned by Jules).    │
-│  The Project holds OAuth connections for TikTok / Instagram /   │
-│  Facebook / Drive AND the OpenRouter credential for image       │
-│  generation and vision. The VM carries no third-party keys.     │
+│  One Composio Organization per restaurant (provisioned by       │
+│  Jules). Two config fields: composio.apiKey + composio.userId.  │
 │                                                                 │
-│  In-agent path: Composio MCP                                    │
-│    → Hermes loads the client's MCP server (ck_ key in           │
-│      ~/.hermes/config.yaml). Tools appear natively in chat.     │
+│  The org holds: OAuth connections (TikTok / Instagram /         │
+│  Facebook / Drive) + the OpenRouter credential for image gen.   │
+│  No MCP. No REST. No third-party API keys on the VM.            │
 │                                                                 │
-│  Out-of-agent path: Composio REST                               │
-│    → Cron scripts (daily-report, weekly-research, drive-sync)   │
-│      use the project API key + user_id from config.json.        │
-│    → OpenRouter calls (image gen, vision) go through the        │
-│      Composio proxy — no OPENROUTER_API_KEY on the VM.          │
+│  Single integration path:                                       │
+│    composio.tools.execute('TOOL_SLUG', { userId, arguments })   │
+│    Used by in-agent work AND cron scripts alike.                 │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ knowledge only — no extra keys
 ┌──────────────────────────▼──────────────────────────────────────┐
@@ -147,25 +143,11 @@ cp -r ~/restaurant-social-marketing-skill/adapted-skills/* ~/.hermes/skills/soci
 
 If your Hermes uses a different skill layout (top-level only, or a different category), override: `SKILLS_CATEGORY=""` (top-level) or `SKILLS_CATEGORY=<other>` when running `install.sh`.
 
-### Step 3 — Install `@composio/core` globally
+### Step 3 — Install SDK dependencies
 
 ```bash
-npm install -g @composio/core
+cd ~/restaurant-social-marketing-skill && npm install
 ```
-
-### Step 4 — Register Composio MCP in Hermes
-
-Append to `~/.hermes/config.yaml` (create the file if missing). The URL and `ck_…` key come from the provisioning bundle for this restaurant:
-
-```yaml
-mcp_servers:
-  composio:
-    url: "https://backend.composio.dev/v3/mcp/<server_id>/mcp?user_id=<entity>"
-    headers:
-      Authorization: "Bearer <ck_SERVER_KEY>"
-```
-
-Inside an active Hermes chat, run `/reload-mcp` to pick up the change.
 
 ### Step 5 — Scaffold the client working directory
 
@@ -183,8 +165,8 @@ cp ~/restaurant-social-marketing-skill/templates/config.template.json ~/social-m
 
 Fields you set:
 - **`telegram.botToken`** + **`telegram.chatId`** — from @BotFather + `getUpdates`.
-- **`composio.projectId`** + **`composio.userId`** + **`composio.projectApiKey`** + **`composio.mcp.{url, serverKey}`** — the full provisioning bundle from Jules's dashboard. One Composio Project per restaurant; the project holds every OAuth + OpenRouter credential.
-- **`platforms.<name>.enabled`** — one boolean per platform the restaurant uses. No `ca_…` IDs — Composio resolves them from `user_id`.
+- **`composio.apiKey`** + **`composio.userId`** — org-scoped key + entity ID. One Composio Organization per restaurant; the org holds every OAuth + OpenRouter credential.
+- **`platforms.<name>.enabled`** — one boolean per platform the restaurant uses.
 - **`googleDrive.enabled`** — `true` if the restaurant is using Drive. `googleDrive.folderName` defaults to `akira-agent_src`. No folder ID needed (auto-created at first use).
 - **`timezone`**, **`country`** — defaults are `Europe/Stockholm` / `SE`.
 
@@ -238,8 +220,9 @@ git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/re
 | No self-improvement                         | Module C loop + cross-client aggregator         |
 | Formatted commands for promotions           | Natural language passive detection              |
 | OpenAI direct + hardcoded `gpt-image-1`     | OpenRouter via Composio proxy + config-driven `imageGen.model` |
-| `OPENROUTER_API_KEY` in ~/.hermes/.env      | No `.env` keys — everything lives in the client's Composio Project |
-| Composio REST with per-platform `ca_…` IDs  | One Composio Project per restaurant; MCP + user_id resolve connections |
+| `OPENROUTER_API_KEY` in ~/.hermes/.env      | No `.env` keys — everything goes through the client's Composio Org |
+| Composio REST with per-platform `ca_…` IDs  | One Composio Org per restaurant; SDK + userId resolve connections |
+| MCP server per client                       | No MCP — single SDK path (`composio.tools.execute`) everywhere |
 
 ---
 

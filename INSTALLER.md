@@ -1,27 +1,26 @@
 # Installer Brief
 
-**If you are an AI agent running the install on a client VM, read this file to completion before asking the human anything.** If you find yourself about to ask for the restaurant name, cuisine, location, booking URL, menu, or any other restaurant-content detail — stop. Those come from the restaurant owner via Telegram later.
+**If you are an AI agent running the install on a client VM, read this file to completion before asking the human anything.** Restaurant content (name, cuisine, location, booking URL, menu) comes from the owner via Telegram later — never ask.
 
 ---
 
-## Your Scope
+## Your Scope (Three Items)
 
-You are the **Installer**. Your job is narrow:
+| # | Item                           | Source                                                            |
+|---|--------------------------------|-------------------------------------------------------------------|
+| 1 | Telegram `botToken` + `chatId` | Ask the human. Token from @BotFather; chatId via `getUpdates`.    |
+| 2 | `composio.apiKey`              | Ask the human. Org-scoped API key (`ak_…`) from https://app.composio.dev. One Composio Organization per restaurant client — the key is already scoped to that org. |
+| 3 | `composio.userId`              | Ask the human. Per-restaurant entity identifier within that org. All OAuth connections (Instagram, TikTok, Facebook, Drive) + the OpenRouter credential live under this userId. |
 
-1. Install the skill suite into Hermes.
-2. Install the Composio SDK globally.
-3. Paste five Composio values (from the provisioning bundle) + the Telegram bot token/chatId into `social-marketing/config.json`.
-4. Register the client's MCP server in `~/.hermes/config.yaml`.
-5. Run the Phase 0 validator.
+**That is the complete list.** Plus which platforms are enabled (booleans). Nothing else.
 
-There are no other API keys to collect. **All external calls from this VM are authorized by Composio** — OAuth tokens for TikTok/Instagram/Facebook/Drive and the OpenRouter credential for image generation all live inside the client's Composio Project. The VM holds nothing but pointers.
+## What You DO NOT Ask
 
-## What You DO NOT Ask the Human
-
-- ❌ Restaurant name, cuisine, location, booking URL, menu, signature dishes, vibe, typical guest, image style.
-- ❌ OpenRouter API key — OpenRouter goes through Composio now.
-- ❌ Per-platform `connected_account_id` / `ca_…` values — MCP + user_id resolve them.
-- ❌ Drive folder ID — found/created by name at first use.
+- ❌ Restaurant name / cuisine / location / booking URL / menu / dishes / vibe / guest type.
+- ❌ OpenRouter API key — OpenRouter goes through the Composio org now.
+- ❌ Per-platform `connected_account_id` / `ca_…` values — SDK resolves from userId.
+- ❌ Drive folder ID — auto-discovered from `folderName` at first use.
+- ❌ MCP server URL or `ck_…` key — MCP is not used. Everything goes through the SDK.
 
 ---
 
@@ -31,8 +30,7 @@ There are no other API keys to collect. **All external calls from this VM are au
 
 ```bash
 git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/restaurant-social-marketing-skill
-cd ~/restaurant-social-marketing-skill
-git pull origin main
+cd ~/restaurant-social-marketing-skill && git pull origin main
 ```
 
 ### Step 2 — Copy skills into Hermes (under `social-media/` category)
@@ -48,57 +46,37 @@ cp -r ~/restaurant-social-marketing-skill/adapted-skills/* ~/.hermes/skills/soci
 **Do not** copy `docs/` or `legacy/`. Verify six skill dirs:
 
 ```bash
-ls ~/.hermes/skills/social-media/ | grep -E '(restaurant-marketing|content-preparation|marketing-intelligence|food-photography-hermes|social-media-seo-hermes|social-trend-monitor-hermes)' | wc -l
+ls ~/.hermes/skills/social-media/ | grep -cE '(restaurant-marketing|content-preparation|marketing-intelligence|food-photography-hermes|social-media-seo-hermes|social-trend-monitor-hermes)'
 ```
 
 Should print `6`.
 
-### Step 3 — Install `@composio/core` globally
+### Step 3 — Install SDK dependencies
 
 ```bash
-npm install -g @composio/core
+cd ~/restaurant-social-marketing-skill && npm install
 ```
 
 Verify:
 
 ```bash
-node -e "console.log(require('@composio/core').Composio)"
+cd ~/restaurant-social-marketing-skill && node -e "console.log(require('@composio/core').Composio)"
 ```
 
-Should print a function/class, not throw.
+Should print a function, not throw.
 
-### Step 4 — Register the Composio MCP server in Hermes
-
-Append to `~/.hermes/config.yaml` (create the file if missing). The URL and `ck_…` key come from the provisioning bundle for this restaurant:
-
-```yaml
-mcp_servers:
-  composio:
-    url: "<COMPOSIO_MCP_URL>"
-    headers:
-      Authorization: "Bearer <COMPOSIO_MCP_SERVER_KEY>"
-```
-
-The URL will look like:
-```
-https://backend.composio.dev/v3/mcp/<server_id>/mcp?user_id=<entity>
-```
-
-Inside an active Hermes chat, run `/reload-mcp` to pick up the change.
-
-### Step 5 — Scaffold the client working directory
+### Step 4 — Scaffold the client working directory
 
 ```bash
-cd ~
-mkdir -p social-marketing/photos/{dishes,ambiance,kitchen,exterior,unsorted}
-mkdir -p social-marketing/{posts,knowledge-base}
-mkdir -p social-marketing/reports/{trend-reports,competitor}
+mkdir -p ~/social-marketing/photos/{dishes,ambiance,kitchen,exterior,unsorted}
+mkdir -p ~/social-marketing/{posts,knowledge-base}
+mkdir -p ~/social-marketing/reports/{trend-reports,competitor}
 cp ~/restaurant-social-marketing-skill/templates/config.template.json ~/social-marketing/config.json
 ```
 
-### Step 6 — Fill in `~/social-marketing/config.json`
+### Step 5 — Fill in `~/social-marketing/config.json`
 
-Paste the five Composio values from the provisioning bundle + Telegram bot info. Everything else stays at template defaults.
+Only these fields. Leave everything else at template defaults.
 
 ```json
 {
@@ -107,13 +85,8 @@ Paste the five Composio values from the provisioning bundle + Telegram bot info.
     "chatId":   "<owner's chat id>"
   },
   "composio": {
-    "projectId":     "<Composio Project ID for this restaurant>",
-    "userId":        "<per-restaurant entity identifier>",
-    "projectApiKey": "<ak_... project-scoped REST key>",
-    "mcp": {
-      "url":       "<same URL as Step 4>",
-      "serverKey": "<same ck_ key as Step 4>"
-    }
+    "apiKey":  "<ak_… org-scoped key>",
+    "userId":  "<per-restaurant entity id>"
   },
   "platforms": {
     "instagram": { "enabled": true  },
@@ -127,43 +100,30 @@ Paste the five Composio values from the provisioning bundle + Telegram bot info.
 }
 ```
 
-### Step 7 — Run the validator
+### Step 6 — Run the validator
 
 ```bash
-node ~/restaurant-social-marketing-skill/scripts/setup.js --config ~/social-marketing/config.json
+cd ~/restaurant-social-marketing-skill && node scripts/setup.js --config ~/social-marketing/config.json
 ```
 
-Every line must report ✅. The checks are:
+Every line must be ✅. Common failures:
 
-- `config.json is Installer-scope only` — no restaurant content bled in.
-- `node v18+`.
-- `@composio/core SDK reachable`.
-- `Telegram bot @<username>` + `chat_id`.
-- `Composio project API key valid`.
-- `composio.userId "<id>" resolves` — verifies the entity exists in the Project.
-- `Image model "<model>" reachable via Composio` — confirms OpenRouter credential is attached to the Project.
-- `Composio MCP reachable` — JSON-RPC initialize against the MCP URL.
-- Per-platform `enabled` booleans.
-- Drive `enabled` + `folderName`.
+- **`composio.apiKey` rejected** → wrong key or wrong org. Check https://app.composio.dev → org → API Keys.
+- **`composio.userId` doesn't resolve** → userId doesn't match the entity under which OAuth connections were created. Check the org's Entities/Users page.
+- **`@composio/core SDK reachable` fails** → run `cd ~/restaurant-social-marketing-skill && npm install`.
 
-Common failures:
-
-- **`composio.userId resolves`** fails → the `user_id` doesn't match the entity under which OAuth connections were created in the Composio Project. Check the provisioning bundle.
-- **`Image model reachable via Composio`** fails → the OpenRouter credential hasn't been added to the Composio Project. Add it via the Project's API Keys / Connections page.
-- **`Composio MCP reachable`** fails → the URL format is wrong (expect `https://backend.composio.dev/v3/mcp/<server_id>/mcp?user_id=<entity>`) or the `ck_` key doesn't match that server.
-
-### Step 8 — Start Hermes
+### Step 7 — Start Hermes
 
 ```bash
 hermes
 ```
 
-### Step 9 — Hand the Telegram bot to the owner
+### Step 8 — Hand the Telegram bot to the owner
 
-The owner starts a chat with the bot. The orchestrator runs ≤7 onboarding questions and writes the answers to `~/social-marketing/restaurant-profile.json`. The Installer never touches that file.
+The owner starts a chat with the bot. The orchestrator runs ≤7 onboarding questions and writes answers to `~/social-marketing/restaurant-profile.json`. The Installer never touches that file.
 
 ---
 
 ## One-Sentence Summary
 
-**Install the skills, install the SDK, paste the five Composio values, register MCP in Hermes, validate, hand off.**
+**Install skills, install SDK, paste two Composio values + Telegram token, validate, hand off.**

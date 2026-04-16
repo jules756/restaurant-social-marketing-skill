@@ -26,7 +26,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeProxy, loadConfig } = require('./composio-helpers');
+const { executeTool, loadConfig } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -94,28 +94,21 @@ ${knownDishes.length ? knownDishes.map((d) => `  - ${d}`).join('\n') : '  (none 
 
 Quality: "high" = sharp, well-lit, good composition. "medium" = usable. "low" = blurry/dark/poor angle.`;
 
-  // Route through Composio proxy — the Project's OpenRouter credential is
-  // injected server-side. No API key on the VM.
-  const result = await executeProxy(
-    config,
-    'https://openrouter.ai/api/v1/chat/completions',
-    'POST',
-    {
-      model: VISION_MODEL,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } }
-          ]
-        }
-      ],
-      response_format: { type: 'json_object' }
-    }
-  );
-  // executeProxy wraps the upstream body under result.data or result.body
-  // depending on Composio tool version.
+  // Route through Composio SDK. The org's OpenRouter credential is used
+  // server-side. No API key on the VM.
+  const result = await executeTool(config, 'OPENROUTER_CHAT_COMPLETIONS', {
+    model: VISION_MODEL,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } }
+        ]
+      }
+    ],
+    response_format: { type: 'json_object' }
+  });
   const data = result.data || result.body || result;
   if (data.error) throw new Error(data.error?.message || 'vision error');
   const content = data.choices?.[0]?.message?.content;

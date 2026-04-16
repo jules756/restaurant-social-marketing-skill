@@ -29,7 +29,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeProxy, loadConfig } = require('./composio-helpers');
+const { executeTool, loadConfig } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -167,21 +167,14 @@ async function generateImage(promptText, referenceImagePath, outPath) {
     });
   }
 
-  // Route through Composio proxy — the Project's OpenRouter credential is
-  // injected server-side. No API key on the VM.
-  const result = await executeProxy(
-    config,
-    'https://openrouter.ai/api/v1/chat/completions',
-    'POST',
-    {
-      model,
-      messages: [{ role: 'user', content: userContent }],
-      modalities: ['image', 'text']
-    }
-  );
+  // Route through Composio SDK. The org's OpenRouter credential is used
+  // server-side. No API key on the VM.
+  const result = await executeTool(config, 'OPENROUTER_CHAT_COMPLETIONS', {
+    model,
+    messages: [{ role: 'user', content: userContent }],
+    modalities: ['image', 'text']
+  });
 
-  // executeProxy wraps the upstream body under result.data or result.body
-  // depending on Composio tool version.
   const data = result.data || result.body || result;
   if (data.error) {
     throw new Error(data.error?.message || `chat.completions: ${JSON.stringify(data).slice(0, 300)}`);

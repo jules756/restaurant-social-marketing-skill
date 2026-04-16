@@ -1,22 +1,20 @@
 /**
- * Shared Composio v3 REST utilities used by cron scripts.
+ * Composio SDK helpers for all scripts.
  *
- * All scripts now pass the loaded `config` object; helpers read
- * config.composio.{projectApiKey, userId} once, eliminating the old pattern
- * of threading apiKey / userId / connected_account_id as explicit args.
+ * Single integration path: @composio/core SDK.
+ * No MCP, no hand-rolled REST. Every external call is
+ * composio.tools.execute(slug, { userId, arguments }).
  *
- * Composio v3's tools-execute endpoint resolves the correct connected account
- * from (user_id, toolkit) when the user has exactly one connection per
- * toolkit, so we no longer maintain per-platform `connected_account_id`
- * values in config.json. If a restaurant ever connects multiple accounts
- * for the same toolkit, we'll reintroduce a `connected_account_id` override
- * parameter at that time.
+ * Config needs exactly two Composio fields:
+ *   config.composio.apiKey   — org-scoped API key (one org per restaurant)
+ *   config.composio.userId   — entity identifier within that org
  */
 
 const fs = require('fs');
 const path = require('path');
+const { Composio } = require('@composio/core');
 
-const BASE_URL = 'https://backend.composio.dev';
+let _client = null;
 
 function loadConfig(configPath) {
   const resolved = path.resolve(configPath);
@@ -24,79 +22,68 @@ function loadConfig(configPath) {
   return JSON.parse(fs.readFileSync(resolved, 'utf-8'));
 }
 
-function requireComposioAuth(config) {
-  const c = config.composio;
-  if (!c?.projectApiKey) throw new Error('config.composio.projectApiKey is required');
-  if (!c?.userId) throw new Error('config.composio.userId is required');
-  return c;
+function getClient(config) {
+  if (_client) return _client;
+  if (!config.composio?.apiKey) throw new Error('config.composio.apiKey is required');
+  _client = new Composio({ apiKey: config.composio.apiKey });
+  return _client;
 }
 
-async function executeTool(config, toolSlug, args = {}) {
-  const { projectApiKey, userId } = requireComposioAuth(config);
-  const res = await fetch(`${BASE_URL}/api/v3/tools/execute/${toolSlug}`, {
-    method: 'POST',
-    headers: { 'x-api-key': projectApiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, arguments: args })
-  });
-  if (!res.ok) {
-    throw new Error(`executeTool(${toolSlug}) failed (${res.status}): ${await res.text()}`);
-  }
-  const result = await res.json();
-  if (result.error) {
-    throw new Error(`executeTool(${toolSlug}) returned error: ${JSON.stringify(result.error)}`);
-  }
-  return result;
+function getUserId(config) {
+  if (!config.composio?.userId) throw new Error('config.composio.userId is required');
+  return config.composio.userId;
 }
 
 /**
- * Proxy an arbitrary HTTP request to an external service whose credential
- * is stored in this Composio Project (e.g. OpenRouter). Composio injects the
- * stored credential into the outbound request. Used for image generation and
- * vision classification so no third-party API keys live on the VM.
+ * Execute a Composio tool directly by slug.
+ *
+ * @param {object} config     — loaded config.json
+ * @param {string} toolSlug   — e.g. 'INSTAGRAM_POST_IG_USER_MEDIA'
+ * @param {object} args       — tool-specific arguments
+ * @returns {Promise<object>} — tool execution result
  */
-async function executeProxy(config, endpoint, method, body = null) {
-  const { projectApiKey, userId } = requireComposioAuth(config);
-  const payload = { user_id: userId, endpoint, method };
-  if (body !== null) payload.body = body;
-  const res = await fetch(`${BASE_URL}/api/v3/tools/execute/proxy`, {
-    method: 'POST',
-    headers: { 'x-api-key': projectApiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+async function executeTool(config, toolSlug, args = {}) {
+  const composio = getClient(config);
+  const userId = getUserId(config);
+  return composio.tools.execute(toolSlug, {
+    userId,
+    arguments: args
   });
-  if (!res.ok) {
-    throw new Error(`executeProxy(${method} ${endpoint}) failed (${res.status}): ${await res.text()}`);
-  }
-  const result = await res.json();
-  if (result.error) {
-    throw new Error(`executeProxy(${method} ${endpoint}) returned error: ${JSON.stringify(result.error)}`);
-  }
-  return result;
 }
 
+/**
+ * Upload a file via Composio. The SDK may expose this natively; if not,
+ * we fall back to the REST presigned-upload pattern.
+ */
 async function uploadFile(config, toolkitSlug, toolSlug, filePath, mimetype = 'image/png') {
-  const { projectApiKey } = requireComposioAuth(config);
+  // Try SDK upload first; fall back to REST if not exposed
+  const composio = getClient(config);
+  if (typeof composio.files?.upload === 'function') {
+    return composio.files.upload({
+      toolkitSlug,
+      toolSlug,
+      filePath,
+      mimetype
+    });
+  }
+  // REST fallback (presigned URL pattern)
   const filename = path.basename(filePath);
   const fileBuffer = fs.readFileSync(filePath);
-  const presignRes = await fetch(`${BASE_URL}/api/v3/files/upload/request`, {
+  const apiKey = config.composio.apiKey;
+  const presignRes = await fetch('https://backend.composio.dev/api/v3/files/upload/request', {
     method: 'POST',
-    headers: { 'x-api-key': projectApiKey, 'Content-Type': 'application/json' },
+    headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({ toolkit_slug: toolkitSlug, tool_slug: toolSlug, filename, mimetype })
   });
-  if (!presignRes.ok) {
-    throw new Error(`uploadFile presign failed (${presignRes.status}): ${await presignRes.text()}`);
-  }
+  if (!presignRes.ok) throw new Error(`uploadFile presign failed (${presignRes.status})`);
   const presignData = await presignRes.json();
-  if (presignData.error) {
-    throw new Error(`uploadFile presign error: ${JSON.stringify(presignData.error)}`);
-  }
+  if (presignData.error) throw new Error(`uploadFile presign error: ${JSON.stringify(presignData.error)}`);
   const putRes = await fetch(presignData.new_presigned_url, {
     method: 'PUT',
     headers: { 'Content-Type': mimetype },
     body: fileBuffer
   });
-  if (!putRes.ok) {
-    throw new Error(`uploadFile PUT failed (${putRes.status}): ${await putRes.text()}`);
-  }
+  if (!putRes.ok) throw new Error(`uploadFile PUT failed (${putRes.status})`);
   return presignData.key;
 }
 
@@ -152,9 +139,6 @@ async function findDriveFolderByName(config, folderName) {
       lastError = e;
     }
   }
-  if (lastError) {
-    console.warn(`findDriveFolderByName("${folderName}") failed: ${lastError.message}`);
-  }
   return null;
 }
 
@@ -174,9 +158,7 @@ async function createDriveFolder(config, folderName) {
       lastError = e;
     }
   }
-  throw new Error(
-    `createDriveFolder("${folderName}") failed. Last error: ${lastError?.message || 'no id in response'}`
-  );
+  throw new Error(`createDriveFolder("${folderName}") failed: ${lastError?.message || 'no id'}`);
 }
 
 async function findOrCreateDriveFolder(config, folderName) {
@@ -187,14 +169,13 @@ async function findOrCreateDriveFolder(config, folderName) {
 }
 
 module.exports = {
+  loadConfig,
+  getClient,
+  getUserId,
   executeTool,
-  executeProxy,
   uploadFile,
   findDriveFolderByName,
   createDriveFolder,
   findOrCreateDriveFolder,
-  PLATFORMS,
-  BASE_URL,
-  loadConfig,
-  requireComposioAuth
+  PLATFORMS
 };

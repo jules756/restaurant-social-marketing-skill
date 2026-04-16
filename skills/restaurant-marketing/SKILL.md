@@ -62,7 +62,7 @@ This distinction is the backbone of the two-actor model. Do not confuse them.
 
 | File                          | Owner      | Contains                                                           |
 |-------------------------------|------------|--------------------------------------------------------------------|
-| `social-marketing/config.json`           | Installer  | API plumbing only — Telegram bot token + chat_id, Composio provisioning bundle (projectId, userId, projectApiKey, MCP url+serverKey), platform enabled booleans, timezone, country, posting schedule. **No restaurant content.** No direct third-party keys — Composio is the only credential store. |
+| `social-marketing/config.json`           | Installer  | API plumbing only — Telegram bot token + chat_id, `composio.apiKey` (org-scoped) + `composio.userId` (entity), platform enabled booleans, timezone, country, posting schedule. **No restaurant content.** No direct third-party keys — Composio is the only credential store. |
 | `social-marketing/restaurant-profile.json` | Orchestrator (writes from Telegram answers) | Restaurant name, cuisine, location, booking URL, signature dishes, vibe, typical guest, and anything else the owner tells you over time. |
 
 Scripts that need a restaurant name, cuisine, or location read from `restaurant-profile.json`. The Installer never edits that file. The orchestrator never edits `config.json`.
@@ -377,21 +377,25 @@ If you find yourself writing image prompts or analytics logic inside this skill,
 
 ---
 
-## Composio Integration (MCP-First)
+## Composio Integration (SDK-Only)
 
-All in-agent work with Composio — posting to TikTok / Instagram / Facebook, reading Drive files during conversation, pulling realtime analytics — goes through the **Composio MCP server** registered in Hermes. The MCP server handles entity / user scoping internally using the URL's `user_id` query parameter and the `ck_` server key, so the skill never touches those values directly.
+Every external call — posting to platforms, reading Drive, pulling analytics, generating images via OpenRouter — goes through the **Composio SDK** (`@composio/core`). One org per restaurant client; two config fields: `composio.apiKey` (org-scoped) and `composio.userId` (entity-scoped). No MCP, no REST, no third-party API keys on the VM.
 
-**What this means for you:**
+**How it works:**
 
-- To post: call the Composio MCP tool directly, e.g. `INSTAGRAM_POST_IG_USER_MEDIA` or `TIKTOK_POST_PHOTO`. Tool names come from the Composio MCP server's tool list, which Hermes loads on startup.
-- To pull Drive photos: call `GOOGLEDRIVE_LIST_FILES` / `GOOGLEDRIVE_DOWNLOAD_FILE` via MCP.
-- To check platform stats during conversation: call the platform-specific insight tool via MCP.
+```js
+const result = await composio.tools.execute('TOOL_SLUG', {
+  userId: config.composio.userId,
+  arguments: { ... }
+});
+```
 
-**Fallback — cron scripts only:**
+- To post: `executeTool(config, 'INSTAGRAM_POST_IG_USER_MEDIA', { ... })`.
+- To pull Drive photos: `executeTool(config, 'GOOGLEDRIVE_LIST_FILES', { ... })`.
+- To check platform stats: `executeTool(config, 'TIKTOK_GET_USER_STATS', {})`.
+- To generate images (OpenRouter routed through Composio): `executeTool(config, 'OPENROUTER_CHAT_COMPLETIONS', { model, messages, ... })`.
 
-`scripts/daily-report.js` and `scripts/weekly-research.js` run outside the Hermes agent loop (cron). Those use Composio's REST API directly via `composio-helpers.js`, authenticated by `config.composio.projectApiKey` and scoped by `config.composio.userId`. Same Project, same credentials as the MCP path — just a different transport.
-
-**Do not mix the two paths in the same action.** If you're in the agent loop, use MCP. If you're writing a cron script, use REST.
+**Cron scripts use the same path.** `daily-report.js`, `drive-sync.js` — same `executeTool(config, ...)`. One integration path everywhere. No MCP server registration in Hermes. No `.env` keys.
 
 ---
 

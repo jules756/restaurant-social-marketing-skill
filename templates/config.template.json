@@ -1,18 +1,13 @@
 {
-  "_comment": "Installer-only file. Restaurant info is NEVER set here — the owner provides it via Telegram during onboarding, and the orchestrator writes it to social-marketing/restaurant-profile.json. This file holds API plumbing only.",
+  "_comment": "Installer-only file. Restaurant info comes from the owner via Telegram onboarding → restaurant-profile.json. This file holds API plumbing only.",
   "telegram": {
     "botToken": "",
     "chatId": ""
   },
   "composio": {
-    "_comment": "All external calls from this VM are authorized by Composio. The Project holds OAuth connections (Instagram/TikTok/Facebook/Drive) plus the OpenRouter credential for image generation and vision. There are no other API keys on the VM. All five fields come from Jules's provisioning step for this restaurant.",
-    "projectId": "",
-    "userId": "",
-    "projectApiKey": "",
-    "mcp": {
-      "url": "",
-      "serverKey": ""
-    }
+    "_comment": "One Composio Organization per restaurant client. The org-scoped API key + userId are the only credentials this VM needs. All platform connections (Instagram, TikTok, Facebook, Drive) and the OpenRouter credential live inside the org, scoped to the userId. No third-party API keys on the VM.",
+    "apiKey": "",
+    "userId": ""
   },
   "platforms": {
     "instagram": { "enabled": false },
@@ -31,7 +26,7 @@
     "utmSource": "social"
   },
   "imageGen": {
-    "_comment": "Image generation only. Chat, captions, and research all run on Hermes's configured model — not set here. The model is fetched through Composio's proxy using the Project's OpenRouter credential. Update when a new image model ships on OpenRouter (https://openrouter.ai/models).",
+    "_comment": "Image generation only. Chat/captions/research run on Hermes's own model. Model is fetched through Composio's OpenRouter credential. Update when better models ship.",
     "model": "google/gemini-2.5-flash-image-preview"
   },
   "timezone": "Europe/Stockholm",

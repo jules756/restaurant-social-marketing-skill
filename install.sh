@@ -16,8 +16,8 @@
 # Do NOT hand the bot to the restaurant owner until setup.js reports all ✅.
 #
 # This script does NOT prompt for API keys. All external calls go through
-# Composio; the provisioning bundle (projectId, userId, projectApiKey, MCP URL,
-# MCP server key) goes into social-marketing/config.json. See INSTALLER.md.
+# Composio SDK. Two values go into social-marketing/config.json:
+# composio.apiKey (org-scoped) + composio.userId. See INSTALLER.md.
 
 set -euo pipefail
 
@@ -97,17 +97,13 @@ fi
 echo
 if [[ "$FRESH_CONFIG" == "1" ]]; then
   cat <<EOF
-Next step — fill in $CLIENT_DIR/config.json with the provisioning bundle from
-Jules's dashboard:
+Next step — fill in $CLIENT_DIR/config.json with two Composio values +
+Telegram info from Jules's dashboard:
   • telegram.{botToken, chatId}                — from @BotFather / getUpdates
-  • composio.projectId                         — Composio Project ID for this restaurant
+  • composio.apiKey                            — org-scoped key (one org per restaurant)
   • composio.userId                            — per-restaurant entity identifier
-  • composio.projectApiKey                     — ak_... project-scoped key
-  • composio.mcp.{url, serverKey}              — per-client MCP URL + ck_ key
   • platforms.{instagram|tiktok|facebook}.enabled — per-platform booleans
   • googleDrive.enabled                         — true if using Drive photos
-
-Also register the MCP server in ~/.hermes/config.yaml (see INSTALLER.md Step 4).
 
 Then re-run this script to validate:
   ./install.sh
