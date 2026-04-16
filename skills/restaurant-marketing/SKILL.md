@@ -4,9 +4,7 @@ description: Social media marketing partner for restaurants. Handles daily conte
 metadata:
   hermes-agent:
     requirements:
-      env:
-        - OPENROUTER_API_KEY
-        - COMPOSIO_API_KEY
+      env: []
       binaries:
         - node
 ---
@@ -32,7 +30,7 @@ Never on Telegram                    Never sees tech config
 
 If a Telegram message from you requires technical knowledge to answer, that is a bug. Fix it in setup, not in conversation.
 
-**Never ask the owner about:** API keys, Composio, `connected_account_id`, platform warmup, image models, booking-tracking setup, image style choices, competitor research scheduling, cron jobs.
+**Never ask the owner about:** API keys, Composio, project IDs, `user_id`, MCP servers, platform warmup, image models, booking-tracking setup, image style choices, competitor research scheduling, cron jobs.
 
 **Always answer the owner about:** their restaurant, their posts, their performance, their promotions, their competitors, their bookings, anything marketing — even off-topic questions. Answer naturally, not as a bot.
 
@@ -50,9 +48,9 @@ node scripts/setup.js --config social-marketing/config.json
 
 The script validates:
 
-- `OPENROUTER_API_KEY` works and the image model (`config.imageGen.model`) is accessible
-- `COMPOSIO_API_KEY` works
-- Every enabled platform has a working `connected_account_id`
+- Composio project API key authenticates and the image model (`config.imageGen.model`) is reachable through the Project's OpenRouter credential
+- Telegram bot token + chat_id work (bot is reachable, chat id valid)
+- Every enabled platform is connected under the configured `user_id` in the Composio Project
 - Google Drive is connected via Composio and the folder is reachable
 - `node` v18+ is installed
 
@@ -64,7 +62,7 @@ This distinction is the backbone of the two-actor model. Do not confuse them.
 
 | File                          | Owner      | Contains                                                           |
 |-------------------------------|------------|--------------------------------------------------------------------|
-| `social-marketing/config.json`           | Installer  | API plumbing only — Telegram bot token + chat_id, Composio connected_account_ids per platform, Drive folder id, timezone, country, posting schedule. **No restaurant content.** |
+| `social-marketing/config.json`           | Installer  | API plumbing only — Telegram bot token + chat_id, Composio provisioning bundle (projectId, userId, projectApiKey, MCP url+serverKey), platform enabled booleans, timezone, country, posting schedule. **No restaurant content.** No direct third-party keys — Composio is the only credential store. |
 | `social-marketing/restaurant-profile.json` | Orchestrator (writes from Telegram answers) | Restaurant name, cuisine, location, booking URL, signature dishes, vibe, typical guest, and anything else the owner tells you over time. |
 
 Scripts that need a restaurant name, cuisine, or location read from `restaurant-profile.json`. The Installer never edits that file. The orchestrator never edits `config.json`.
@@ -381,7 +379,7 @@ If you find yourself writing image prompts or analytics logic inside this skill,
 
 ## Composio Integration (MCP-First)
 
-All in-agent work with Composio — posting to TikTok / Instagram / Facebook, reading Drive files during conversation, pulling realtime analytics — goes through the **Composio MCP server** registered in Hermes. The MCP server handles entity / user scoping internally using the `ck_` server key, so there is no `user_id` or `connected_account_id` plumbing at the skill level.
+All in-agent work with Composio — posting to TikTok / Instagram / Facebook, reading Drive files during conversation, pulling realtime analytics — goes through the **Composio MCP server** registered in Hermes. The MCP server handles entity / user scoping internally using the URL's `user_id` query parameter and the `ck_` server key, so the skill never touches those values directly.
 
 **What this means for you:**
 
@@ -391,7 +389,7 @@ All in-agent work with Composio — posting to TikTok / Instagram / Facebook, re
 
 **Fallback — cron scripts only:**
 
-`scripts/daily-report.js` and `scripts/weekly-research.js` run outside the Hermes agent loop (cron). Those use Composio's REST API directly via `composio-helpers.js`. The REST path needs `config.composio.apiKey` and `config.composio.userId` — both are optional and only populated if the Installer wants cron-based automation.
+`scripts/daily-report.js` and `scripts/weekly-research.js` run outside the Hermes agent loop (cron). Those use Composio's REST API directly via `composio-helpers.js`, authenticated by `config.composio.projectApiKey` and scoped by `config.composio.userId`. Same Project, same credentials as the MCP path — just a different transport.
 
 **Do not mix the two paths in the same action.** If you're in the agent loop, use MCP. If you're writing a cron script, use REST.
 

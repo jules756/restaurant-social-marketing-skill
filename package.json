@@ -1,0 +1,19 @@
+{
+  "name": "restaurant-social-marketing-skill",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Hermes skill suite for restaurant social media marketing. Scripts call Composio REST for cron and the @composio/core SDK for provisioning lookups.",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@composio/core": "^0.1.0"
+  },
+  "optionalDependencies": {
+    "canvas": "^2.11.2"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.js --config $HOME/social-marketing/config.json",
+    "syntax-check": "for f in scripts/*.js; do node -c \"$f\" || exit 1; done"
+  }
+}

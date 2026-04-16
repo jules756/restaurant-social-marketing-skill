@@ -26,7 +26,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadConfig } = require('./composio-helpers');
+const { executeProxy, loadConfig } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -38,12 +38,6 @@ const hasFlag = (name) => args.includes(`--${name}`);
 const configPath = getArg('config');
 if (!configPath) {
   console.error('Usage: node drive-inventory.js --config <config.json> [--full]');
-  process.exit(1);
-}
-
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-if (!OPENROUTER_API_KEY) {
-  console.error('OPENROUTER_API_KEY is not set.');
   process.exit(1);
 }
 
@@ -76,10 +70,10 @@ if (menuPath && fs.existsSync(menuPath)) {
   }
 }
 
-// Internal implementation detail — not user-configurable. Vision classification
-// is part of the image pipeline; the user only controls the image GENERATION
-// model via config.imageGen.model. Override via VISION_MODEL env var if truly
-// necessary, but the default is intentional and should rarely change.
+// Vision classification is part of the image pipeline and runs through the
+// Composio Project's OpenRouter credential — no direct OpenRouter key on the
+// VM. The vision model is an internal detail (not user-configurable).
+// Override via VISION_MODEL env var if absolutely necessary.
 const VISION_MODEL = process.env.VISION_MODEL || 'openai/gpt-4o-mini';
 
 async function classifyPhoto(filePath) {
@@ -100,15 +94,13 @@ ${knownDishes.length ? knownDishes.map((d) => `  - ${d}`).join('\n') : '  (none 
 
 Quality: "high" = sharp, well-lit, good composition. "medium" = usable. "low" = blurry/dark/poor angle.`;
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://akira-agent.com',
-      'X-Title': 'drive-inventory'
-    },
-    body: JSON.stringify({
+  // Route through Composio proxy — the Project's OpenRouter credential is
+  // injected server-side. No API key on the VM.
+  const result = await executeProxy(
+    config,
+    'https://openrouter.ai/api/v1/chat/completions',
+    'POST',
+    {
       model: VISION_MODEL,
       messages: [
         {
@@ -120,10 +112,12 @@ Quality: "high" = sharp, well-lit, good composition. "medium" = usable. "low" = 
         }
       ],
       response_format: { type: 'json_object' }
-    })
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) throw new Error(data.error?.message || `vision ${res.status}`);
+    }
+  );
+  // executeProxy wraps the upstream body under result.data or result.body
+  // depending on Composio tool version.
+  const data = result.data || result.body || result;
+  if (data.error) throw new Error(data.error?.message || 'vision error');
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('vision: empty response');
   return JSON.parse(content);

@@ -8,19 +8,22 @@
  *
  * Usage: node setup.js --config social-marketing/config.json
  *
- * Checks (every line reports ✅ or ❌ with a fix instruction):
- *   1. node v18+
- *   2. OPENROUTER_API_KEY set and working
- *   3. Configured image model (config.imageGen.model) accessible via OpenRouter
- *   4. COMPOSIO_API_KEY set and working
- *   5. Each enabled platform has a working connected_account_id
- *   6. Google Drive connected and folder reachable (if enabled)
+ * Checks (each line reports ✅ or ❌ with a fix instruction):
+ *   1. Two-actor boundary — config.json has no restaurant-content keys.
+ *   2. node v18+
+ *   3. @composio/core SDK reachable from Node (global install).
+ *   4. Telegram bot token + chat id work.
+ *   5. Composio project API key authenticates against /api/v3/toolkits.
+ *   6. Composio user_id scoping works (list connected accounts).
+ *   7. Composio-routed OpenRouter reaches the configured image model.
+ *   8. Composio MCP server URL accepts JSON-RPC initialize with ck_ key.
+ *   9. Per-platform `enabled` booleans — MCP resolves connections at call time.
+ *  10. Google Drive enabled + folderName set.
  *
- * Exit code: 0 if every check passes, 1 otherwise. Do not hand the bot to the
- * owner until exit code is 0.
+ * Exit code: 0 if every enabled check passes, 1 otherwise.
  */
 
-const { loadConfig } = require('./composio-helpers');
+const { executeTool, executeProxy, loadConfig } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -34,9 +37,6 @@ if (!configPath) {
   process.exit(1);
 }
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const COMPOSIO_API_KEY = process.env.COMPOSIO_API_KEY;
-
 const checks = [];
 const record = (label, ok, fix) => {
   checks.push({ label, ok, fix });
@@ -45,17 +45,16 @@ const record = (label, ok, fix) => {
 };
 
 function checkTwoActorBoundary(config) {
-  // Installer-scope only. If any of these appear in config.json, it means the
-  // Installer crossed the boundary into owner-scope — restaurant content
-  // belongs in restaurant-profile.json (written by the orchestrator from
-  // Telegram answers), NOT in config.json.
+  // Installer-scope only. Any of these in config.json = someone crossed the
+  // owner-scope boundary. Restaurant content belongs in
+  // restaurant-profile.json, written by the orchestrator via Telegram.
   const forbidden = ['restaurant', 'menu', 'chef', 'history', 'recipes', 'vibe', 'signatureDishes'];
   const present = forbidden.filter((k) => k in config);
   if (present.length > 0) {
     record(
       'config.json is Installer-scope only',
       false,
-      `Remove these keys from config.json — they are owner-scope and belong in social-marketing/restaurant-profile.json (set by the orchestrator via Telegram): ${present.join(', ')}`
+      `Remove these keys — they are owner-scope and belong in social-marketing/restaurant-profile.json: ${present.join(', ')}`
     );
     return false;
   }
@@ -70,6 +69,21 @@ async function checkNode() {
     major >= 18,
     'Install Node.js v18+ (https://nodejs.org or nvm install 18)'
   );
+}
+
+async function checkComposioSdk() {
+  // The SDK is not used by this script, but its global presence is a product
+  // prerequisite for provisioning tooling and future script migration.
+  try {
+    require.resolve('@composio/core');
+    record('@composio/core SDK reachable', true);
+  } catch {
+    record(
+      '@composio/core SDK reachable',
+      false,
+      'Run: npm install -g @composio/core'
+    );
+  }
 }
 
 async function checkTelegram(config) {
@@ -96,71 +110,101 @@ async function checkTelegram(config) {
   }
 }
 
-async function checkOpenRouterKey() {
-  if (!OPENROUTER_API_KEY) {
-    record('OPENROUTER_API_KEY present', false, 'Add OPENROUTER_API_KEY to ~/.hermes/.env');
+async function checkComposioRestAuth(config) {
+  const key = config.composio?.projectApiKey;
+  if (!key) {
+    record('composio.projectApiKey set', false, 'Set composio.projectApiKey (ak_... project-scoped REST key from https://app.composio.dev)');
     return false;
   }
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/models', {
-      headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}` }
+    const res = await fetch('https://backend.composio.dev/api/v3/toolkits', {
+      headers: { 'x-api-key': key }
     });
-    record(
-      'OpenRouter API key valid',
-      res.ok,
-      'Key rejected by OpenRouter. Verify at https://openrouter.ai/keys'
-    );
-    return res.ok;
+    if (res.ok) {
+      record('Composio project API key valid', true);
+      return true;
+    }
+    record('Composio project API key valid', false, `Composio rejected key (${res.status}). Verify project API key at https://app.composio.dev → your project → API Keys`);
+    return false;
   } catch (e) {
-    record('OpenRouter API key valid', false, `Network error: ${e.message}`);
+    record('Composio project API key valid', false, `Network error: ${e.message}`);
     return false;
   }
 }
 
-async function checkImageModel(config) {
-  const imageModel = config.imageGen?.model;
-  if (!imageModel) {
-    record('config.imageGen.model set', false, 'Set config.imageGen.model to an OpenRouter image model (e.g. google/gemini-2.5-flash-image-preview)');
+async function checkComposioUserId(config, restOk) {
+  if (!restOk) {
+    record('composio.userId scoping works', false, 'REST key not working — cannot verify user_id');
     return;
   }
-  if (!OPENROUTER_API_KEY) {
-    record(`${imageModel} reachable`, false, 'OpenRouter key missing — cannot check');
+  if (!config.composio?.userId) {
+    record('composio.userId set', false, 'Set composio.userId (per-restaurant entity identifier from provisioning)');
     return;
   }
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/models', {
-      headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}` }
-    });
-    if (!res.ok) {
-      record(`${imageModel} reachable`, false, `OpenRouter returned ${res.status}`);
-      return;
-    }
-    const data = await res.json();
-    const models = (data.data || []).map((m) => m.id);
-    const found = models.includes(imageModel);
+    await executeTool(config, 'COMPOSIO_LIST_CONNECTED_ACCOUNTS', {});
+    record(`composio.userId "${config.composio.userId}" resolves`, true);
+  } catch (e) {
     record(
-      `${imageModel} reachable`,
+      `composio.userId "${config.composio.userId}" resolves`,
+      false,
+      `Composio returned error: ${e.message}. Verify the user_id matches the entity under which OAuth connections were created.`
+    );
+  }
+}
+
+async function checkComposioImageModel(config, restOk) {
+  if (!restOk) {
+    record('Image model reachable via Composio', false, 'REST key not working — cannot verify');
+    return;
+  }
+  const model = config.imageGen?.model;
+  if (!model) {
+    record('config.imageGen.model set', false, 'Set config.imageGen.model (e.g. google/gemini-2.5-flash-image-preview)');
+    return;
+  }
+  try {
+    const result = await executeProxy(
+      config,
+      'https://openrouter.ai/api/v1/models',
+      'GET'
+    );
+    const body = result.data || result.body || result;
+    const models = (body.data || body.models || []).map((m) => m.id || m.name).filter(Boolean);
+    const found = models.includes(model);
+    record(
+      `Image model "${model}" reachable via Composio`,
       found,
-      found ? null : `Model not in OpenRouter catalog. Browse https://openrouter.ai/models and update config.imageGen.model.`
+      found ? null : `Model not in OpenRouter catalog via your Composio Project. Either add OpenRouter credential to the Project, or update config.imageGen.model to a model that's listed at https://openrouter.ai/models.`
     );
   } catch (e) {
-    record(`${imageModel} reachable`, false, `Error: ${e.message}`);
+    record(
+      `Image model "${model}" reachable via Composio`,
+      false,
+      `Composio proxy to OpenRouter failed: ${e.message}. Verify the OpenRouter credential is attached to this Composio Project.`
+    );
   }
 }
 
 async function checkComposioMcp(config) {
   const mcp = config.composio?.mcp;
   if (!mcp?.url) {
-    record('composio.mcp.url set', false, 'Set composio.mcp.url (default: https://connect.composio.dev/mcp)');
-    return false;
+    record(
+      'composio.mcp.url set',
+      false,
+      'Set composio.mcp.url (expect https://backend.composio.dev/v3/mcp/<server_id>/mcp?user_id=<entity>)'
+    );
+    return;
   }
   if (!mcp.serverKey) {
-    record('composio.mcp.serverKey set', false, 'Set composio.mcp.serverKey (ck_… from https://app.composio.dev → MCP Servers)');
-    return false;
+    record(
+      'composio.mcp.serverKey set',
+      false,
+      'Set composio.mcp.serverKey (ck_... server key from https://app.composio.dev → MCP Servers)'
+    );
+    return;
   }
   try {
-    // MCP servers respond to JSON-RPC initialize. A well-formed request with a
-    // bad key should return 401/403; a valid key returns 200 with server capabilities.
     const res = await fetch(mcp.url, {
       method: 'POST',
       headers: {
@@ -179,54 +223,25 @@ async function checkComposioMcp(config) {
         }
       })
     });
-    const ok = res.ok;
     record(
-      `Composio MCP reachable at ${mcp.url}`,
-      ok,
-      ok ? null : `MCP server returned ${res.status}. Verify the ck_ server key at https://app.composio.dev → MCP Servers.`
+      `Composio MCP reachable`,
+      res.ok,
+      res.ok ? null : `MCP server returned ${res.status}. Verify URL format is https://backend.composio.dev/v3/mcp/<server_id>/mcp?user_id=<entity> and ck_ key matches.`
     );
-    return ok;
   } catch (e) {
-    record(`Composio MCP reachable at ${mcp.url}`, false, `Network error: ${e.message}`);
-    return false;
+    record('Composio MCP reachable', false, `Network error: ${e.message}`);
   }
 }
 
-function checkComposioRestOptional(config) {
-  // REST API is OPTIONAL — only used by cron scripts (daily-report.js,
-  // weekly-research.js). If the Installer isn't setting up cron automation,
-  // composio.apiKey + composio.userId can be blank and we note it as a
-  // warning, not a failure.
-  const rest = config.composio;
-  const hasAny = rest?.apiKey || rest?.userId;
-  const hasBoth = rest?.apiKey && rest?.userId;
-  if (!hasAny) {
-    console.log('⏭  Composio REST API not configured — cron scripts (daily-report, weekly-research) will not run. This is fine if you don\'t want scheduled automation.');
-    return;
-  }
-  if (!hasBoth) {
-    record(
-      'composio.apiKey + composio.userId both set',
-      false,
-      'For cron scripts both composio.apiKey (ak_…) and composio.userId are required. Either set both or clear both to disable cron.'
-    );
-    return;
-  }
-  record('Composio REST (for cron) configured', true);
-}
-
-async function checkPlatformEnabled(name, platformConfig) {
+function checkPlatformEnabled(name, platformConfig) {
   if (!platformConfig?.enabled) {
     console.log(`⏭  ${name} disabled in config.platforms`);
     return;
   }
-  // Under MCP-first, we don't pre-validate the platform connection with REST.
-  // The MCP server holds the connection. At post time, the skill calls the
-  // MCP tool directly and surfaces any failure. This keeps setup lean.
   record(`${name} enabled — will post via Composio MCP`, true);
 }
 
-async function checkGoogleDriveEnabled(config) {
+function checkGoogleDriveEnabled(config) {
   const drive = config.googleDrive;
   if (!drive?.enabled) {
     console.log('⏭  Google Drive disabled in config.googleDrive');
@@ -236,9 +251,6 @@ async function checkGoogleDriveEnabled(config) {
     record('googleDrive.folderName set', false, 'Set googleDrive.folderName in config.json (default: "akira-agent_src")');
     return;
   }
-  // Folder discovery / creation happens at first use via the MCP tool
-  // GOOGLEDRIVE_LIST_FILES. The orchestrator handles that on the first
-  // `generate post` or manual sync command, not at setup time.
   record(`Google Drive enabled — folder "${drive.folderName}" will be found/created at first use`, true);
 }
 
@@ -248,16 +260,17 @@ async function checkGoogleDriveEnabled(config) {
 
   checkTwoActorBoundary(config);
   await checkNode();
+  await checkComposioSdk();
   await checkTelegram(config);
-  const openrouterOk = await checkOpenRouterKey();
-  if (openrouterOk) await checkImageModel(config);
+  const restOk = await checkComposioRestAuth(config);
+  await checkComposioUserId(config, restOk);
+  await checkComposioImageModel(config, restOk);
   await checkComposioMcp(config);
-  checkComposioRestOptional(config);
 
   for (const name of ['tiktok', 'instagram', 'facebook']) {
-    await checkPlatformEnabled(name, config.platforms?.[name]);
+    checkPlatformEnabled(name, config.platforms?.[name]);
   }
-  await checkGoogleDriveEnabled(config);
+  checkGoogleDriveEnabled(config);
 
   const failed = checks.filter((c) => !c.ok);
   console.log('\n' + '─'.repeat(60));

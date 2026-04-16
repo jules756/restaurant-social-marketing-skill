@@ -4,9 +4,7 @@ description: Asset pipeline for restaurant social content. Decides what to creat
 metadata:
   hermes-agent:
     requirements:
-      env:
-        - OPENROUTER_API_KEY
-        - COMPOSIO_API_KEY
+      env: []
       binaries:
         - node
 ---

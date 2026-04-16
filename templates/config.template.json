@@ -5,13 +5,14 @@
     "chatId": ""
   },
   "composio": {
-    "_comment": "Primary integration is Composio MCP. The MCP server key (ck_…) is set up per-client in https://app.composio.dev → MCP Servers, and registered in Hermes via ~/.hermes/config.yaml (see INSTALLER.md). The REST API key + userId are OPTIONAL and only used by cron scripts (daily-report.js, weekly-research.js) that run outside the agent loop.",
+    "_comment": "All external calls from this VM are authorized by Composio. The Project holds OAuth connections (Instagram/TikTok/Facebook/Drive) plus the OpenRouter credential for image generation and vision. There are no other API keys on the VM. All five fields come from Jules's provisioning step for this restaurant.",
+    "projectId": "",
+    "userId": "",
+    "projectApiKey": "",
     "mcp": {
-      "url": "https://connect.composio.dev/mcp",
+      "url": "",
       "serverKey": ""
-    },
-    "apiKey": "",
-    "userId": ""
+    }
   },
   "platforms": {
     "instagram": { "enabled": false },
@@ -25,14 +26,12 @@
     "inventoryPath": "social-marketing/photo-inventory.json"
   },
   "analytics": {
-    "composio": { "enabled": true },
     "googleAnalytics": { "enabled": false, "propertyId": "" },
     "bookingTracking": { "method": "manual", "dailyBaseline": 0 },
     "utmSource": "social"
   },
   "imageGen": {
-    "_comment": "Image generation only. Chat, captions, and research all run on Hermes's configured model — not set here. Update model when a new image model ships on OpenRouter (https://openrouter.ai/models).",
-    "provider": "openrouter",
+    "_comment": "Image generation only. Chat, captions, and research all run on Hermes's configured model — not set here. The model is fetched through Composio's proxy using the Project's OpenRouter credential. Update when a new image model ships on OpenRouter (https://openrouter.ai/models).",
     "model": "google/gemini-2.5-flash-image-preview"
   },
   "timezone": "Europe/Stockholm",

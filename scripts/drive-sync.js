@@ -5,10 +5,10 @@
  * Usage:
  *   node drive-sync.js --config social-marketing/config.json
  *
- * Reads: config.googleDrive.{folderId, composioAccountId, localCachePath}
+ * Reads: config.googleDrive.{folderId?, folderName, localCachePath}.
+ *        If folderId is missing, resolves it via findOrCreateDriveFolder.
  * Writes: photos under <localCachePath> (categorized subdirs) and updates
- * the inventory index. Actual vision-based categorization happens in
- * drive-inventory.js — this script only pulls bytes.
+ * the drive index. Vision-based categorization happens in drive-inventory.js.
  *
  * Idempotent: files that already exist locally (matching Drive file ID and
  * size) are skipped. Re-run safely.
@@ -16,7 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeTool, loadConfig, PLATFORMS } = require('./composio-helpers');
+const { executeTool, findOrCreateDriveFolder, loadConfig, PLATFORMS } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -27,12 +27,6 @@ const getArg = (name) => {
 const configPath = getArg('config');
 if (!configPath) {
   console.error('Usage: node drive-sync.js --config <config.json>');
-  process.exit(1);
-}
-
-const COMPOSIO_API_KEY = process.env.COMPOSIO_API_KEY;
-if (!COMPOSIO_API_KEY) {
-  console.error('COMPOSIO_API_KEY is not set.');
   process.exit(1);
 }
 
@@ -50,11 +44,13 @@ for (const sub of ['dishes', 'ambiance', 'kitchen', 'exterior', 'unsorted']) {
   fs.mkdirSync(path.join(cacheDir, sub), { recursive: true });
 }
 
-function loadIndex() {
+function loadIndex(folderId) {
   if (!fs.existsSync(indexPath)) {
-    return { lastSynced: null, folderId: drive.folderId, files: {} };
+    return { lastSynced: null, folderId, files: {} };
   }
-  return JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  const idx = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  idx.folderId = folderId;
+  return idx;
 }
 
 function saveIndex(idx) {
@@ -63,36 +59,40 @@ function saveIndex(idx) {
 }
 
 async function listFolder(folderId) {
-  const result = await executeTool(
-    COMPOSIO_API_KEY,
-    drive.composioAccountId,
-    `drive_sync_${Date.now()}`,
-    PLATFORMS.googledrive.listFilesTool,
-    { folder_id: folderId, page_size: 1000 }
-  );
-  // Composio tool responses vary — try common shapes.
+  const result = await executeTool(config, PLATFORMS.googledrive.listFilesTool, {
+    folder_id: folderId,
+    page_size: 1000
+  });
   const files = result.data?.files || result.files || result.data || [];
   return files.filter((f) => (f.mimeType || f.mime_type || '').startsWith('image/'));
 }
 
 async function downloadFile(file) {
-  const result = await executeTool(
-    COMPOSIO_API_KEY,
-    drive.composioAccountId,
-    `drive_sync_${Date.now()}`,
-    PLATFORMS.googledrive.downloadFileTool,
-    { file_id: file.id }
-  );
-  // Expect base64 content in result.data.content or result.content
+  const result = await executeTool(config, PLATFORMS.googledrive.downloadFileTool, {
+    file_id: file.id
+  });
   const b64 = result.data?.content || result.content;
   if (!b64) throw new Error(`Download for ${file.name}: no content returned`);
   return Buffer.from(b64, 'base64');
 }
 
+async function resolveFolderId() {
+  if (drive.folderId) return drive.folderId;
+  if (!drive.folderName) {
+    throw new Error('config.googleDrive.folderName is required when folderId is absent');
+  }
+  const { id, created } = await findOrCreateDriveFolder(config, drive.folderName);
+  if (created) {
+    console.log(`  ✨ Created new Drive folder "${drive.folderName}" (${id})`);
+  }
+  return id;
+}
+
 (async () => {
-  const idx = loadIndex();
-  console.log(`Syncing Drive folder ${drive.folderId} → ${cacheDir}`);
-  const files = await listFolder(drive.folderId);
+  const folderId = await resolveFolderId();
+  const idx = loadIndex(folderId);
+  console.log(`Syncing Drive folder ${drive.folderName || folderId} (${folderId}) → ${cacheDir}`);
+  const files = await listFolder(folderId);
   console.log(`Found ${files.length} image(s) in folder.`);
 
   let added = 0;

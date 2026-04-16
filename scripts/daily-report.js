@@ -31,12 +31,6 @@ if (!configPath) {
   process.exit(1);
 }
 
-const COMPOSIO_API_KEY = process.env.COMPOSIO_API_KEY;
-if (!COMPOSIO_API_KEY) {
-  console.error('COMPOSIO_API_KEY is not set.');
-  process.exit(1);
-}
-
 const config = loadConfig(configPath);
 const today = new Date().toISOString().split('T')[0];
 const reportPath = path.resolve(
@@ -47,23 +41,20 @@ const hookPath = path.resolve(config.paths?.hookPerformance || 'social-marketing
 fs.mkdirSync(path.dirname(reportPath), { recursive: true });
 
 async function pullPlatform(name) {
-  const pc = config.platforms?.[name];
-  if (!pc?.enabled) return null;
-  const accountId = pc.composioAccountId;
-  const userId = `daily_${today}`;
+  if (!config.platforms?.[name]?.enabled) return null;
   try {
     if (name === 'tiktok') {
       const [videos, stats] = await Promise.all([
-        executeTool(COMPOSIO_API_KEY, accountId, userId, PLATFORMS.tiktok.listVideosTool, { max_count: days * 5 }),
-        executeTool(COMPOSIO_API_KEY, accountId, userId, PLATFORMS.tiktok.userStatsTool, {})
+        executeTool(config, PLATFORMS.tiktok.listVideosTool, { max_count: days * 5 }),
+        executeTool(config, PLATFORMS.tiktok.userStatsTool, {})
       ]);
       return { videos, stats };
     }
     if (name === 'instagram') {
-      return await executeTool(COMPOSIO_API_KEY, accountId, userId, PLATFORMS.instagram.userInsightsTool, {});
+      return await executeTool(config, PLATFORMS.instagram.userInsightsTool, {});
     }
     if (name === 'facebook') {
-      return await executeTool(COMPOSIO_API_KEY, accountId, userId, PLATFORMS.facebook.pageInsightsTool, {});
+      return await executeTool(config, PLATFORMS.facebook.pageInsightsTool, {});
     }
   } catch (e) {
     return { error: e.message };

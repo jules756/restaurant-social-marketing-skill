@@ -4,9 +4,7 @@ description: Data layer for restaurant social marketing. Runs daily analytics, w
 metadata:
   hermes-agent:
     requirements:
-      env:
-        - OPENROUTER_API_KEY
-        - COMPOSIO_API_KEY
+      env: []
       binaries:
         - node
 ---
@@ -23,7 +21,7 @@ Runs every morning at **10:00** in the restaurant's timezone (`config.timezone`)
 
 ### Data sources
 
-1. **Composio platform stats** — pulled via the `connected_account_id` for each enabled platform.
+1. **Composio platform stats** — pulled via `executeTool(config, '<TOOL_SLUG>', args)` in `composio-helpers.js`, scoped by `config.composio.userId`. Composio resolves the right connected account from the `user_id` + toolkit.
    - TikTok: `TIKTOK_LIST_VIDEOS` + `TIKTOK_GET_USER_STATS`.
    - Instagram: `INSTAGRAM_GET_MEDIA` + `INSTAGRAM_GET_INSIGHTS`.
    - Facebook: equivalent Composio endpoints.

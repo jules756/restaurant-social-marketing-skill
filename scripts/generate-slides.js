@@ -29,6 +29,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { executeProxy, loadConfig } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -48,13 +49,7 @@ if (!configPath || !outputDir || !promptsPath) {
   process.exit(1);
 }
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-if (!OPENROUTER_API_KEY) {
-  console.error('OPENROUTER_API_KEY is not set. Run from an environment with ~/.hermes/.env loaded.');
-  process.exit(1);
-}
-
-const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+const config = loadConfig(configPath);
 const prompts = JSON.parse(fs.readFileSync(promptsPath, 'utf-8'));
 const model = config.imageGen?.model;
 
@@ -172,24 +167,24 @@ async function generateImage(promptText, referenceImagePath, outPath) {
     });
   }
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://akira-agent.com',
-      'X-Title': 'restaurant-social-marketing'
-    },
-    body: JSON.stringify({
+  // Route through Composio proxy — the Project's OpenRouter credential is
+  // injected server-side. No API key on the VM.
+  const result = await executeProxy(
+    config,
+    'https://openrouter.ai/api/v1/chat/completions',
+    'POST',
+    {
       model,
       messages: [{ role: 'user', content: userContent }],
       modalities: ['image', 'text']
-    })
-  });
+    }
+  );
 
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    throw new Error(data.error?.message || `chat.completions ${res.status}: ${JSON.stringify(data).slice(0, 300)}`);
+  // executeProxy wraps the upstream body under result.data or result.body
+  // depending on Composio tool version.
+  const data = result.data || result.body || result;
+  if (data.error) {
+    throw new Error(data.error?.message || `chat.completions: ${JSON.stringify(data).slice(0, 300)}`);
   }
 
   const b64 = extractImageB64(data);

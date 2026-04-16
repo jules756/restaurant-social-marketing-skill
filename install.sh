@@ -5,19 +5,24 @@
 #   ./install.sh
 #
 # What it does:
-#   1. Copies custom skills + adapted skills into ~/.hermes/skills/
-#   2. Prompts for OpenRouter + Composio keys, writes to ~/.hermes/.env
-#      (appends if the file exists — never overwrites existing keys)
+#   1. Copies custom skills + adapted skills into ~/.hermes/skills/social-media/
+#      (removes stale v2 directories first).
+#   2. Ensures @composio/core SDK is installed globally on the VM.
 #   3. Creates social-marketing/ working directory with the config template
-#   4. Runs the Phase 0 validator (scripts/setup.js)
+#      (default: $HOME/social-marketing). Prompts to wipe any prior client
+#      profile data.
+#   4. Runs the Phase 0 validator (scripts/setup.js).
 #
 # Do NOT hand the bot to the restaurant owner until setup.js reports all ✅.
+#
+# This script does NOT prompt for API keys. All external calls go through
+# Composio; the provisioning bundle (projectId, userId, projectApiKey, MCP URL,
+# MCP server key) goes into social-marketing/config.json. See INSTALLER.md.
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HERMES_DIR="${HERMES_HOME:-$HOME/.hermes}"
-ENV_FILE="$HERMES_DIR/.env"
 # Hermes organizes skills by category. Restaurant marketing lives under
 # social-media/. Override via SKILLS_CATEGORY=<other> if your Hermes uses a
 # different layout, or set it to "" to install at the top level.
@@ -25,9 +30,7 @@ SKILLS_CATEGORY="${SKILLS_CATEGORY:-social-media}"
 SKILLS_DIR="$HERMES_DIR/skills${SKILLS_CATEGORY:+/$SKILLS_CATEGORY}"
 # Client working dir — default to an absolute path under $HOME so running
 # install.sh from inside the repo doesn't create it inside the repo tree.
-# Override via CLIENT_DIR=/somewhere/else if needed.
 CLIENT_DIR="${CLIENT_DIR:-$HOME/social-marketing}"
-# If the user passed a relative CLIENT_DIR, resolve it relative to $HOME.
 if [[ "$CLIENT_DIR" != /* ]]; then
   CLIENT_DIR="$HOME/$CLIENT_DIR"
 fi
@@ -35,6 +38,7 @@ fi
 echo "=== Restaurant Social Marketing Installer ==="
 echo "Repo:    $REPO_DIR"
 echo "Hermes:  $HERMES_DIR"
+echo "Skills:  $SKILLS_DIR"
 echo "Client:  $CLIENT_DIR"
 echo
 
@@ -51,30 +55,17 @@ cp -r "$REPO_DIR/skills/"* "$SKILLS_DIR/"
 cp -r "$REPO_DIR/adapted-skills/"* "$SKILLS_DIR/"
 echo "  ✅ skills copied"
 
-# 2. API keys
-mkdir -p "$HERMES_DIR"
-touch "$ENV_FILE"
-chmod 600 "$ENV_FILE"
-
-ensure_key() {
-  local var="$1"
-  local prompt="$2"
-  if grep -qE "^${var}=" "$ENV_FILE"; then
-    echo "  ✅ $var already set in $ENV_FILE"
-    return
-  fi
-  read -r -s -p "$prompt: " value
-  echo
-  if [[ -z "$value" ]]; then
-    echo "  ❌ $var not provided — aborting." >&2
+# 2. Ensure @composio/core is installed globally
+if node -e "require.resolve('@composio/core')" 2>/dev/null; then
+  echo "  ✅ @composio/core SDK already installed"
+else
+  echo "Installing @composio/core globally …"
+  if ! npm install -g @composio/core; then
+    echo "  ❌ npm install -g @composio/core failed. Install Node.js v18+ and re-run." >&2
     exit 1
   fi
-  echo "${var}=${value}" >> "$ENV_FILE"
-  echo "  ✅ $var written to $ENV_FILE"
-}
-
-ensure_key OPENROUTER_API_KEY "OpenRouter API key (sk-or-...)"
-ensure_key COMPOSIO_API_KEY   "Composio API key"
+  echo "  ✅ @composio/core installed"
+fi
 
 # 3. Client working dir
 FRESH_CONFIG=0
@@ -106,20 +97,27 @@ fi
 # 4. Validator
 echo
 if [[ "$FRESH_CONFIG" == "1" ]]; then
-  echo "Next step — fill in $CLIENT_DIR/config.json:"
-  echo "  • restaurant.{name, cuisine, location, bookingUrl}"
-  echo "  • platforms.{instagram|tiktok|facebook}.enabled + composioAccountId"
-  echo "  • googleDrive.{enabled, folderId, composioAccountId}"
-  echo
-  echo "Then re-run this script to validate:  ./install.sh"
+  cat <<EOF
+Next step — fill in $CLIENT_DIR/config.json with the provisioning bundle from
+Jules's dashboard:
+  • telegram.{botToken, chatId}                — from @BotFather / getUpdates
+  • composio.projectId                         — Composio Project ID for this restaurant
+  • composio.userId                            — per-restaurant entity identifier
+  • composio.projectApiKey                     — ak_... project-scoped key
+  • composio.mcp.{url, serverKey}              — per-client MCP URL + ck_ key
+  • platforms.{instagram|tiktok|facebook}.enabled — per-platform booleans
+  • googleDrive.enabled                         — true if using Drive photos
+
+Also register the MCP server in ~/.hermes/config.yaml (see INSTALLER.md Step 4).
+
+Then re-run this script to validate:
+  ./install.sh
+EOF
   exit 0
 fi
 
 echo "Running Phase 0 validator …"
 echo
-set -a
-source "$ENV_FILE"
-set +a
 if ! node "$REPO_DIR/scripts/setup.js" --config "$CLIENT_DIR/config.json"; then
   echo
   echo "❌ Phase 0 checks failed. Fix the flagged items in $CLIENT_DIR/config.json and re-run this script."
