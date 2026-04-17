@@ -32,20 +32,12 @@ if (!configPath) {
   process.exit(1);
 }
 
-/**
- * Map a Drive subfolder name to one of our categories. Case-insensitive,
- * tolerant of misspellings ("Menue" → menu, "Diches" → dish). Photos in
- * unmapped folders get category=null and go through vision classification.
- */
-function mapSubfolderToCategory(folderName) {
-  const n = (folderName || '').toLowerCase().trim();
-  if (/^(food|foods|dish|diches|dishes|plate|plates|meal|meals)$/.test(n)) return 'dish';
-  if (/^(place|places|ambiance|ambience|interior|dining|dining[-_ ]?room|restaurant|venue|atmosphere|atmosph|vibe)$/.test(n)) return 'ambiance';
-  if (/^(kitchen|cuisine|chef|chefs|back[-_ ]?of[-_ ]?house|prep)$/.test(n)) return 'kitchen';
-  if (/^(exterior|outside|facade|street|entrance|front|outdoor)$/.test(n)) return 'exterior';
-  if (/^(menu|menue|menus|card|carte)$/.test(n)) return 'menu';
-  return null; // vision will classify
-}
+// Folder-name-to-category mapping is intentionally NOT hardcoded. Every
+// restaurant organizes their Drive differently ("Food" vs "Dishes" vs
+// "Plats", "Ambience" vs "Place" vs "Intérieur"). We record the folder
+// each photo came from as metadata and let vision classification decide
+// the category based on the image content. The folder name becomes a
+// hint in drive-inventory's vision prompt, not an authoritative tag.
 
 const config = loadConfig(configPath);
 const drive = config.googleDrive;
@@ -148,10 +140,10 @@ async function collectImagesRecursive(folderId, folderName, depth = 0) {
   const collected = [];
   const images = entries.filter(isImage);
   const folders = entries.filter(isFolder);
-  // Tag each image with the subfolder it came from → drives category mapping.
-  const category = mapSubfolderToCategory(folderName);
+  // Tag each image with its source folder (for vision hint) but leave
+  // category null — vision classifies based on content, not folder name.
   for (const img of images) {
-    collected.push({ ...img, sourceFolder: folderName, sourceCategory: category });
+    collected.push({ ...img, sourceFolder: folderName });
   }
   if (noRecurse) {
     return { collected, subfolders: folders };
@@ -170,12 +162,9 @@ async function collectImagesRecursive(folderId, folderName, depth = 0) {
   const { collected: files, subfolders } = await collectImagesRecursive(folderId, drive.folderName);
   if (subfolders.length > 0) {
     console.log(`Discovered subfolders:`);
-    subfolders.forEach((s) => {
-      const cat = mapSubfolderToCategory(s.name);
-      console.log(`  - ${s.name} → category=${cat || 'unsorted (vision)'}`);
-    });
+    subfolders.forEach((s) => console.log(`  - ${s.name}`));
   }
-  console.log(`Found ${files.length} image(s) across all folders.`);
+  console.log(`Found ${files.length} image(s) across all folders (vision will classify each).`);
 
   if (files.length === 0 && subfolders.length === 0) {
     console.log('');
@@ -187,15 +176,16 @@ async function collectImagesRecursive(folderId, folderName, depth = 0) {
   let skipped = 0;
   let failed = 0;
 
+  // All images land in unsorted/ initially. drive-inventory.js classifies
+  // each via vision, then moves files to the matched category subdir.
+  const unsortedDir = path.join(cacheDir, 'unsorted');
+  fs.mkdirSync(unsortedDir, { recursive: true });
+
   for (const file of files) {
     const id = file.id;
     const name = file.name || `${id}.jpg`;
     const existing = idx.files[id];
-    // Drop into the subfolder-mapped category dir when we know it; else unsorted.
-    const cat = file.sourceCategory || 'unsorted';
-    const categoryDir = { dish: 'dishes', ambiance: 'ambiance', kitchen: 'kitchen', exterior: 'exterior', menu: 'menu', unsorted: 'unsorted' }[cat];
-    fs.mkdirSync(path.join(cacheDir, categoryDir), { recursive: true });
-    const target = path.join(cacheDir, categoryDir, name);
+    const target = path.join(unsortedDir, name);
 
     if (existing && fs.existsSync(existing.localPath) && fs.statSync(existing.localPath).size > 0) {
       skipped++;
@@ -209,12 +199,12 @@ async function collectImagesRecursive(folderId, folderName, depth = 0) {
         name,
         size: buf.length,
         localPath: target,
-        category: file.sourceCategory || null, // pre-categorized if subfolder mapped; null → vision
-        sourceFolder: file.sourceFolder || null,
+        category: null,          // vision will fill
+        sourceFolder: file.sourceFolder || null,  // hint for vision
         syncedAt: new Date().toISOString()
       };
       added++;
-      console.log(`  ⬇  ${cat}/${name}  (from "${file.sourceFolder}")`);
+      console.log(`  ⬇  ${name}  (from Drive folder "${file.sourceFolder}")`);
     } catch (e) {
       failed++;
       console.error(`  ❌ ${name}: ${e.message}`);

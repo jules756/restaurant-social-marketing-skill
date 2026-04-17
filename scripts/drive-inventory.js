@@ -85,23 +85,34 @@ if (menuPath && fs.existsSync(menuPath)) {
 // Override via VISION_MODEL env var if absolutely necessary.
 const VISION_MODEL = process.env.VISION_MODEL || 'openai/gpt-4o-mini';
 
-async function classifyPhoto(filePath) {
+async function classifyPhoto(filePath, sourceFolder) {
   const buf = fs.readFileSync(filePath);
   const mime = filePath.match(/\.png$/i) ? 'image/png' : 'image/jpeg';
   const b64 = buf.toString('base64');
+  const folderHint = sourceFolder
+    ? `\nHINT: This image came from a Drive folder named "${sourceFolder}" — use this as a non-authoritative clue. Classify based on the actual image content, not the folder name.`
+    : '';
   const prompt = `You are cataloging a restaurant's photo library. Look at this photo and return ONLY a JSON object with this exact shape (no markdown, no prose):
 
 {
-  "category": "dish" | "ambiance" | "kitchen" | "exterior",
+  "category": "dish" | "ambiance" | "kitchen" | "exterior" | "menu" | "other",
   "dishName": "<best-guess dish name if category is dish, else null>",
   "quality": "high" | "medium" | "low",
   "notes": "<one-sentence description>"
 }
 
+Category guidelines:
+- "dish": plated food ready to eat, close-up or styled shot
+- "ambiance": dining room, tables, bar, decor, guests enjoying the space
+- "kitchen": chefs working, cooking in progress, prep area, equipment
+- "exterior": building facade, street view, entrance, outdoor seating
+- "menu": menu card/board/printed list
+- "other": people, events, logos, anything not fitting above
+
 Known dishes from this restaurant's menu (prefer these when category is dish):
 ${knownDishes.length ? knownDishes.map((d) => `  - ${d}`).join('\n') : '  (none provided)'}
 
-Quality: "high" = sharp, well-lit, good composition. "medium" = usable. "low" = blurry/dark/poor angle.`;
+Quality: "high" = sharp, well-lit, good composition. "medium" = usable. "low" = blurry/dark/poor angle.${folderHint}`;
 
   // Prefer direct OpenRouter via config.imageGen.openrouterApiKey or env.
   // Fall back to Composio if not set.
@@ -150,7 +161,14 @@ Quality: "high" = sharp, well-lit, good composition. "medium" = usable. "low" = 
 }
 
 function moveToCategory(file, category) {
-  const subdir = { dish: 'dishes', ambiance: 'ambiance', kitchen: 'kitchen', exterior: 'exterior' }[category] || 'unsorted';
+  const subdir = {
+    dish: 'dishes',
+    ambiance: 'ambiance',
+    kitchen: 'kitchen',
+    exterior: 'exterior',
+    menu: 'menu',
+    other: 'other'
+  }[category] || 'unsorted';
   const target = path.join(cacheDir, subdir, path.basename(file.localPath));
   if (file.localPath !== target) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -216,7 +234,7 @@ function updateInventory(inv, file, classification) {
       continue;
     }
     try {
-      const c = await classifyPhoto(file.localPath);
+      const c = await classifyPhoto(file.localPath, file.sourceFolder);
       file.category = c.category;
       file.dishName = c.dishName || null;
       file.quality = c.quality;
