@@ -38,8 +38,14 @@ Execution:
 5. Attach all slides to Telegram via `terminal` using the Bot API's `sendMediaGroup` endpoint with `config.telegram.{botToken,chatId}` — this is the only supported attachment path. Never describe images in text instead of attaching.
 6. Send the caption as a follow-up text message (same Bot API).
 7. Ask: *"Ready to post?"*
-8. On yes, invoke each enabled platform's posting via [content-preparation](../content-preparation/SKILL.md). Platform posting scripts (`post-to-instagram.js` etc.) are the next build phase — if they don't exist yet, tell the owner honestly: *"Images ready. Auto-posting to Instagram is being wired up this week — want me to save everything so you can upload in one tap, or hold?"*
-9. `memory` append a record: `{ hookCategory, hookText, dish, platform, approach, timestamp }`. This feeds future selection.
+8. On yes, for each enabled platform in `config.platforms`, invoke `terminal`:
+   ```bash
+   node ~/restaurant-social-marketing-skill/scripts/post-to-<platform>.js \
+     --config ~/social-marketing/config.json \
+     --dir ~/social-marketing/posts/<timestamp>
+   ```
+   Each script prints a JSON line: `{"ok": true, "platform": "...", "mediaId": "...", "permalink": "..."}` on success, `{"ok": false, "error": "..."}` on failure. Parse the last line of stdout. Report results honestly to the owner — *"Posted to Instagram"* + permalink, or *"Instagram failed: [short reason]. Saved for retry."* Do not pretend success.
+9. `memory` append a record: `{ hookCategory, hookText, dish, platform, approach, timestamp, mediaId, permalink }`. This feeds future selection.
 10. TikTok posts as draft: *"Added the draft to your TikTok inbox. Pick a trending sound before publishing."*
 
 ### `generate pool`
