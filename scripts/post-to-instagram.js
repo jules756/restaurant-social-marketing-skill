@@ -135,11 +135,12 @@ if (!dir) fail('--dir is required (path to the post directory)');
       childIds.push(id);
     }
 
-    // 2. Create the CAROUSEL parent container
+    // 2. Create the CAROUSEL parent container. children must be a JSON
+    //    array (not a comma-separated string) per Composio's validator.
     const carouselArgs = {
       ig_user_id: igUserId,
       media_type: 'CAROUSEL',
-      children: childIds.join(','),
+      children: childIds,
       caption
     };
     const carouselResult = await executeTool(config, ig.createMediaTool, carouselArgs);
