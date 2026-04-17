@@ -102,6 +102,10 @@ async function uploadFile(config, toolkitSlug, toolSlug, filePath, mimetype = 'i
 
   // Path 1: imgbb (preferred for Instagram-bound uploads — clean URLs).
   const imgbbKey = config.imageHost?.imgbbApiKey || process.env.IMGBB_API_KEY;
+  if (!uploadFile._loggedPath) {
+    uploadFile._loggedPath = true;
+    console.error(`[uploadFile] path: ${imgbbKey ? 'imgbb' : 'composio-r2 (signed URL, will NOT work for Instagram)'}`);
+  }
   if (imgbbKey) {
     return uploadToImgbb(imgbbKey, fileBuffer, filename);
   }
