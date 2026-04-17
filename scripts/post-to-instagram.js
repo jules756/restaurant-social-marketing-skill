@@ -9,18 +9,20 @@
  *   slide-1.png … slide-N.png    (final images with overlays; up to 10)
  *   caption.txt                   (UTM-tagged caption)
  *
+ * Default behavior (no flags): publishes the carousel live and notifies
+ * the restaurant owner on Telegram with the permalink + a suggestion to
+ * convert to a Reel (via IG app's "Share as Reel") if they want music.
+ *
  * Flags:
- *   --draft            Create the carousel container but skip the publish
- *                      step. Container is invisible in Meta Business Suite
- *                      UI (expires in 24h). Prefer --schedule instead.
- *   --schedule <min>   Schedule the post for <min> minutes from now.
- *                      Appears in Meta Business Suite as "Scheduled",
- *                      reviewable + cancelable from the UI. Must be
- *                      ≥10 minutes (Instagram's minimum).
- *   --music <name>     Best-effort add audio to the carousel via the
- *                      Graph API's audio_name parameter. Instagram's
- *                      carousel music support is inconsistent; if this
- *                      fails the post still goes out without music.
+ *   --draft            Create the carousel container but skip publish.
+ *                      Container is invisible in Meta Business Suite UI
+ *                      and expires in 24h.
+ *   --schedule <min>   Schedule for <min> minutes from now (≥10 min).
+ *                      Appears in Meta Business Suite → Planner.
+ *   --music <name>     Best-effort carousel audio via audio_name param.
+ *                      Instagram's Graph API support is inconsistent for
+ *                      carousels; silently ignored if it fails.
+ *   --no-notify        Skip the Telegram notification after publish.
  *   --dry-run          Do not call Composio. Print the steps that would
  *                      run.
  *
@@ -54,6 +56,7 @@ const dryRun = hasFlag('dry-run');
 const scheduleMinutesArg = getArg('schedule');
 const scheduleMinutes = scheduleMinutesArg ? parseInt(scheduleMinutesArg, 10) : null;
 const musicName = getArg('music');
+const notifyTelegram = !hasFlag('no-notify');  // Default ON; --no-notify to skip.
 
 function fail(msg) {
   console.log(JSON.stringify({ ok: false, platform: 'instagram', error: msg }));
@@ -61,6 +64,28 @@ function fail(msg) {
 }
 function dryLog(label, obj) {
   console.log(`[DRY-RUN] ${label}: ${JSON.stringify(obj)}`);
+}
+
+async function sendTelegramNotification(config, text) {
+  const token = config.telegram?.botToken;
+  const chatId = config.telegram?.chatId;
+  if (!token || !chatId) return false;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: false
+      })
+    });
+    const data = await res.json();
+    return !!data.ok;
+  } catch {
+    return false;
+  }
 }
 
 if (!dir) fail('--dir is required (path to the post directory)');
@@ -193,12 +218,37 @@ if (!dir) fail('--dir is required (path to the post directory)');
 
     // 4. Publish
     const publishResult = await executeTool(config, ig.publishMediaTool, {
+      ig_user_id: igUserId,
       creation_id: carouselId
     });
     const mediaId = publishResult.data?.id || publishResult.id;
     if (!mediaId) throw new Error(`Publish returned no media id: ${JSON.stringify(publishResult).slice(0, 200)}`);
 
-    const permalink = publishResult.data?.permalink || publishResult.permalink || null;
+    // Fetch the permalink — publish usually returns just the id; resolve url.
+    let permalink = publishResult.data?.permalink || publishResult.permalink || null;
+    if (!permalink) {
+      try {
+        const meta = await executeTool(config, 'INSTAGRAM_GET_IG_MEDIA', {
+          ig_media_id: mediaId,
+          fields: 'permalink'
+        });
+        permalink = meta?.data?.permalink || null;
+      } catch {}
+    }
+
+    // 5. Notify the restaurant owner on Telegram.
+    let notified = false;
+    if (notifyTelegram) {
+      const profilePath = path.join(path.dirname(path.resolve(configPath)), 'restaurant-profile.json');
+      const restaurantName = fs.existsSync(profilePath)
+        ? (JSON.parse(fs.readFileSync(profilePath, 'utf-8')).name || 'your restaurant')
+        : 'your restaurant';
+      const message =
+        `✅ New Instagram post live for *${restaurantName}*\n\n` +
+        (permalink ? `${permalink}\n\n` : `Media id: \`${mediaId}\`\n\n`) +
+        `Want music on it? Open the post in Instagram → tap ⋯ → *Share as Reel*. Instagram will let you pick a trending sound and convert it to a Reel for better reach.`;
+      notified = await sendTelegramNotification(config, message);
+    }
 
     console.log(JSON.stringify({
       ok: true,
@@ -207,7 +257,8 @@ if (!dir) fail('--dir is required (path to the post directory)');
       mediaId,
       permalink,
       slidesPosted: slides.length,
-      carouselContainerId: carouselId
+      carouselContainerId: carouselId,
+      telegramNotified: notified
     }));
   } catch (e) {
     fail(e.message);
