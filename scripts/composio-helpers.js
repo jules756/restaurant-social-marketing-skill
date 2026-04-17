@@ -101,15 +101,17 @@ async function uploadFile(config, toolkitSlug, toolSlug, filePath, mimetype = 'i
     body: fileBuffer
   });
   if (!putRes.ok) throw new Error(`uploadFile PUT failed (${putRes.status}): ${await putRes.text()}`);
-  // Return the public URL (for tools like Instagram that need an https:// URL),
-  // falling back to the key for tools that accept file keys directly.
+  // Return a URL Instagram (or any downstream tool) can actually fetch.
+  // Composio's v3 file upload uses Cloudflare R2 with SHORT-LIVED signed URLs.
+  // The signed URL itself (including query string) IS the fetchable URL —
+  // valid ~15-60 min, enough time for Instagram's media-creation download.
+  // Do NOT strip the query string — that breaks the signature.
   const publicUrl =
     presignData.public_url ||
     presignData.download_url ||
     presignData.file_url ||
     presignData.access_url ||
-    // The PUT URL minus query string is often the public object URL on S3
-    (typeof uploadUrl === 'string' ? uploadUrl.split('?')[0] : null);
+    uploadUrl; // full signed URL, query string intact
   return {
     key: presignData.key || presignData.file_key || presignData.id,
     url: publicUrl,
