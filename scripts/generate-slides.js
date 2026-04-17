@@ -43,6 +43,7 @@ const promptsPath = getArg('prompts');
 const platform = getArg('platform') || 'tiktok';
 const urgency = getArg('urgency') || 'quality';
 const dish = getArg('dish');
+const explicitReference = getArg('reference'); // direct path override (from drive-get.js)
 
 if (!configPath || !outputDir || !promptsPath) {
   console.error('Usage: node generate-slides.js --config <config.json> --output <dir> --prompts <prompts.json> [--platform tiktok] [--urgency fast|quality] [--dish "Name"]');
@@ -84,13 +85,16 @@ if (!Array.isArray(prompts.slides) || prompts.slides.length === 0) {
 
 fs.mkdirSync(outputDir, { recursive: true });
 
+// Direct --reference flag is the primary img2img path. Pass an absolute
+// file path (often from drive-get.js). Inventory-based lookup remains as
+// a legacy fallback for pipelines that pre-cache to disk.
 function loadInventory() {
   const invPath = config.googleDrive?.inventoryPath;
   if (!invPath || !fs.existsSync(invPath)) return null;
   try {
     return JSON.parse(fs.readFileSync(invPath, 'utf-8'));
   } catch (e) {
-    console.warn(`Inventory unreadable (${e.message}) — falling back to txt2img for all slides.`);
+    console.warn(`Inventory unreadable (${e.message}) — falling back to txt2img.`);
     return null;
   }
 }
@@ -99,7 +103,6 @@ function findReferencePhoto(inventory, dishName) {
   if (!inventory || !dishName) return null;
   const entry = inventory.byDish?.[dishName];
   if (!entry?.bestFile) return null;
-  // Resolve cache dir relative to the config file's directory, not cwd.
   const configDir = path.dirname(path.resolve(configPath));
   const rawCachePath = config.googleDrive?.localCachePath || 'photos/';
   const cacheDir = path.isAbsolute(rawCachePath)
@@ -230,8 +233,14 @@ async function withRetry(fn, retries = 2) {
 }
 
 (async () => {
-  const inventory = loadInventory();
-  const refPhoto = findReferencePhoto(inventory, dish);
+  // Priority: explicit --reference > inventory lookup > txt2img
+  let refPhoto = null;
+  if (explicitReference && fs.existsSync(explicitReference)) {
+    refPhoto = path.resolve(explicitReference);
+  } else {
+    const inventory = loadInventory();
+    refPhoto = findReferencePhoto(inventory, dish);
+  }
   const approach = refPhoto ? 'img2img' : 'txt2img';
 
   const profilePath = config.paths?.restaurantProfile || 'social-marketing/restaurant-profile.json';
