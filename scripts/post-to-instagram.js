@@ -96,32 +96,52 @@ if (!dir) fail('--dir is required (path to the post directory)');
       return;
     }
 
-    // 1. Upload each slide
-    const fileKeys = [];
+    // 1. Upload each slide. uploadFile returns { key, url, raw }; Instagram
+    //    needs an HTTPS url in image_url.
+    const uploaded = [];
     for (const slide of slides) {
-      const key = await uploadFile(config, ig.toolkit, ig.createMediaTool, slide, 'image/png');
-      fileKeys.push(key);
+      const upload = await uploadFile(config, ig.toolkit, ig.createMediaTool, slide, 'image/png');
+      if (typeof upload === 'string') {
+        // Back-compat if the helper still returns a bare key
+        uploaded.push({ key: upload, url: upload });
+      } else {
+        uploaded.push(upload);
+      }
+    }
+
+    // Get the ig_user_id — required by Instagram Graph API. Composio may
+    // auto-fill it from the connected account; if not, fetch it.
+    let igUserId = config.platforms?.instagram?.igUserId;
+    if (!igUserId) {
+      try {
+        const meRes = await executeTool(config, 'INSTAGRAM_GET_USER_ME', {});
+        igUserId = meRes?.data?.id || meRes?.id;
+      } catch { /* proceed without; tool may auto-resolve */ }
     }
 
     // 2. Create one CAROUSEL_ITEM container per slide
     const childIds = [];
-    for (const key of fileKeys) {
-      const result = await executeTool(config, ig.createMediaTool, {
+    for (const u of uploaded) {
+      const args = {
         media_type: 'IMAGE',
         is_carousel_item: true,
-        image_url: key
-      });
+        image_url: u.url || u.key
+      };
+      if (igUserId) args.ig_user_id = igUserId;
+      const result = await executeTool(config, ig.createMediaTool, args);
       const id = result.data?.id || result.id || result.data?.container_id;
-      if (!id) throw new Error(`CAROUSEL_ITEM create returned no id: ${JSON.stringify(result).slice(0, 200)}`);
+      if (!id) throw new Error(`CAROUSEL_ITEM create returned no id. args=${JSON.stringify(args).slice(0, 200)} response=${JSON.stringify(result).slice(0, 400)}`);
       childIds.push(id);
     }
 
     // 3. Create the CAROUSEL parent container
-    const carouselResult = await executeTool(config, ig.createMediaTool, {
+    const carouselArgs = {
       media_type: 'CAROUSEL',
       children: childIds.join(','),
       caption
-    });
+    };
+    if (igUserId) carouselArgs.ig_user_id = igUserId;
+    const carouselResult = await executeTool(config, ig.createMediaTool, carouselArgs);
     const carouselId = carouselResult.data?.id || carouselResult.id || carouselResult.data?.container_id;
     if (!carouselId) throw new Error(`CAROUSEL create returned no id: ${JSON.stringify(carouselResult).slice(0, 200)}`);
 

@@ -88,6 +88,11 @@ async function uploadFile(config, toolkitSlug, toolSlug, filePath, mimetype = 'i
   if (!presignRes.ok) throw new Error(`uploadFile presign failed (${presignRes.status}): ${await presignRes.text()}`);
   const presignData = await presignRes.json();
   if (presignData.error) throw new Error(`uploadFile presign error: ${JSON.stringify(presignData.error)}`);
+  if (process.env.COMPOSIO_DEBUG && !uploadFile._loggedFields) {
+    uploadFile._loggedFields = true;
+    console.error('[DEBUG] presign response keys:', Object.keys(presignData));
+    console.error('[DEBUG] presign response:', JSON.stringify(presignData).slice(0, 500));
+  }
   const uploadUrl = presignData.new_presigned_url || presignData.presigned_url || presignData.url;
   if (!uploadUrl) throw new Error(`uploadFile: presign returned no URL: ${JSON.stringify(presignData).slice(0, 200)}`);
   const putRes = await fetch(uploadUrl, {
@@ -96,7 +101,20 @@ async function uploadFile(config, toolkitSlug, toolSlug, filePath, mimetype = 'i
     body: fileBuffer
   });
   if (!putRes.ok) throw new Error(`uploadFile PUT failed (${putRes.status}): ${await putRes.text()}`);
-  return presignData.key || presignData.file_key || presignData.id;
+  // Return the public URL (for tools like Instagram that need an https:// URL),
+  // falling back to the key for tools that accept file keys directly.
+  const publicUrl =
+    presignData.public_url ||
+    presignData.download_url ||
+    presignData.file_url ||
+    presignData.access_url ||
+    // The PUT URL minus query string is often the public object URL on S3
+    (typeof uploadUrl === 'string' ? uploadUrl.split('?')[0] : null);
+  return {
+    key: presignData.key || presignData.file_key || presignData.id,
+    url: publicUrl,
+    raw: presignData
+  };
 }
 
 const PLATFORMS = {
