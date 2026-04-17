@@ -10,12 +10,19 @@
  *   caption.txt                   (UTM-tagged caption)
  *
  * Flags:
- *   --draft     Create the carousel container but skip the publish step.
- *               Owner publishes later via Meta Business Suite. Returns
- *               creation_id so the caller can publish on demand.
- *   --dry-run   Do not call Composio. Print the exact steps that would
- *               run, including payload shapes and upload targets. Useful
- *               for local testing without real credentials.
+ *   --draft            Create the carousel container but skip the publish
+ *                      step. Container is invisible in Meta Business Suite
+ *                      UI (expires in 24h). Prefer --schedule instead.
+ *   --schedule <min>   Schedule the post for <min> minutes from now.
+ *                      Appears in Meta Business Suite as "Scheduled",
+ *                      reviewable + cancelable from the UI. Must be
+ *                      ≥10 minutes (Instagram's minimum).
+ *   --music <name>     Best-effort add audio to the carousel via the
+ *                      Graph API's audio_name parameter. Instagram's
+ *                      carousel music support is inconsistent; if this
+ *                      fails the post still goes out without music.
+ *   --dry-run          Do not call Composio. Print the steps that would
+ *                      run.
  *
  * Output (stdout, last line is machine-readable JSON):
  *   Live:  {"ok": true, "mediaId": "...", "permalink": "...", "platform": "instagram"}
@@ -44,6 +51,9 @@ const configPath = getArg('config') || `${process.env.HOME}/social-marketing/con
 const dir = getArg('dir');
 const draft = hasFlag('draft');
 const dryRun = hasFlag('dry-run');
+const scheduleMinutesArg = getArg('schedule');
+const scheduleMinutes = scheduleMinutesArg ? parseInt(scheduleMinutesArg, 10) : null;
+const musicName = getArg('music');
 
 function fail(msg) {
   console.log(JSON.stringify({ ok: false, platform: 'instagram', error: msg }));
@@ -135,17 +145,39 @@ if (!dir) fail('--dir is required (path to the post directory)');
       childIds.push(id);
     }
 
-    // 2. Create the CAROUSEL parent container. children must be a JSON
-    //    array (not a comma-separated string) per Composio's validator.
+    // 2. Create the CAROUSEL parent container.
     const carouselArgs = {
       ig_user_id: igUserId,
       media_type: 'CAROUSEL',
       children: childIds,
       caption
     };
+    if (scheduleMinutes && scheduleMinutes >= 10) {
+      // Instagram requires ≥10 min in the future. Convert to Unix seconds.
+      carouselArgs.scheduled_publish_time = Math.floor(Date.now() / 1000) + scheduleMinutes * 60;
+    }
+    if (musicName) {
+      // Best-effort — Instagram's carousel audio support is limited.
+      carouselArgs.audio_name = musicName;
+    }
     const carouselResult = await executeTool(config, ig.createMediaTool, carouselArgs);
     const carouselId = carouselResult.data?.id || carouselResult.id || carouselResult.data?.container_id;
     if (!carouselId) throw new Error(`CAROUSEL create returned no id: ${JSON.stringify(carouselResult).slice(0, 200)}`);
+
+    if (scheduleMinutes && scheduleMinutes >= 10) {
+      const publishAt = new Date(Date.now() + scheduleMinutes * 60 * 1000).toISOString();
+      console.log(JSON.stringify({
+        ok: true,
+        platform: 'instagram',
+        mode: 'scheduled',
+        creationId: carouselId,
+        scheduledPublishAt: publishAt,
+        scheduledInMinutes: scheduleMinutes,
+        slidesPosted: slides.length,
+        note: `Scheduled for ${publishAt}. Visible in Meta Business Suite → Planner/Scheduled. Cancel from UI before publish time if needed.`
+      }));
+      return;
+    }
 
     if (draft) {
       console.log(JSON.stringify({
@@ -154,7 +186,7 @@ if (!dir) fail('--dir is required (path to the post directory)');
         mode: 'draft',
         creationId: carouselId,
         slidesPosted: slides.length,
-        note: 'Carousel container created. Publish via Meta Business Suite or call INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH with creation_id=' + carouselId
+        note: 'Container created but NOT visible in Meta Business Suite UI. Expires in 24h unless published. Use --schedule <min> for a real visible draft.'
       }));
       return;
     }
