@@ -37,8 +37,13 @@ if (!drive?.enabled) {
   process.exit(0);
 }
 
-const cacheDir = path.resolve(drive.localCachePath || 'social-marketing/photos/');
-const indexPath = path.resolve(drive.localCachePath || 'social-marketing/photos/', 'drive-index.json');
+// Resolve paths relative to the config file's directory, not cwd.
+const configDir = path.dirname(path.resolve(configPath));
+const rawCachePath = drive.localCachePath || 'photos/';
+const cacheDir = path.isAbsolute(rawCachePath)
+  ? rawCachePath
+  : path.resolve(configDir, rawCachePath.replace(/^social-marketing\//, ''));
+const indexPath = path.join(cacheDir, 'drive-index.json');
 fs.mkdirSync(cacheDir, { recursive: true });
 for (const sub of ['dishes', 'ambiance', 'kitchen', 'exterior', 'unsorted']) {
   fs.mkdirSync(path.join(cacheDir, sub), { recursive: true });

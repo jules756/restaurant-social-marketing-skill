@@ -99,7 +99,12 @@ function findReferencePhoto(inventory, dishName) {
   if (!inventory || !dishName) return null;
   const entry = inventory.byDish?.[dishName];
   if (!entry?.bestFile) return null;
-  const cacheDir = config.googleDrive?.localCachePath || 'social-marketing/photos/';
+  // Resolve cache dir relative to the config file's directory, not cwd.
+  const configDir = path.dirname(path.resolve(configPath));
+  const rawCachePath = config.googleDrive?.localCachePath || 'photos/';
+  const cacheDir = path.isAbsolute(rawCachePath)
+    ? rawCachePath
+    : path.resolve(configDir, rawCachePath.replace(/^social-marketing\//, ''));
   const abs = path.resolve(cacheDir, 'dishes', entry.bestFile);
   return fs.existsSync(abs) ? abs : null;
 }
