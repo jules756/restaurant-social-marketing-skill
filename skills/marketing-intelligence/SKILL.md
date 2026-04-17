@@ -1,234 +1,105 @@
 ---
 name: marketing-intelligence
-description: Data layer for restaurant social marketing. Runs daily analytics, weekly trend research, on-demand competitor research, and a self-improvement loop. Feeds diagnostics and recommendations back to the restaurant-marketing orchestrator.
-metadata:
-  hermes-agent:
-    requirements:
-      env: []
-      binaries:
-        - node
+description: Data layer for restaurant social marketing — daily analytics, weekly trend research, on-demand competitor research, and self-improvement loop. Load when the restaurant-marketing orchestrator calls for `check analytics`, `show trends`, `research competitors`, or when evaluating whether a hook category is still worth rotating. Uses Hermes's web_search, browser_*, and memory tools directly.
 ---
 
-# Marketing Intelligence (Data Layer)
+# Marketing Intelligence
 
-You are the analytical brain. Two scheduled jobs (daily, weekly) + two on-demand jobs (competitor research, self-improvement). All outputs are structured JSON/Markdown saved under `social-marketing/`. You never talk to the owner directly — the orchestrator summarizes your outputs.
+Analytical brain for the restaurant. Four workflows — two scheduled, two on-demand. All outputs are structured files + a short summary returned to the [restaurant-marketing orchestrator](../restaurant-marketing/SKILL.md) for the owner. **You never message the owner directly.**
 
----
+Uses Hermes's native tools for research (`web_search`, `web_extract`, `browser_navigate`, `browser_vision`) and for learning persistence (`memory`, `session_search`). Platform stats come through Composio SDK scripts.
 
-## Module A — Daily Analytics Cron
+## Module A — Daily Analytics (Scheduled, 10:00 local)
 
-Runs every morning at **10:00** in the restaurant's timezone (`config.timezone`), before the first post of the day so it can inform that day's content.
+**Trigger:** cron at `config.timezone` 10:00, before the first post of the day. Also runs on `check analytics` command from the orchestrator.
 
-### Data sources
+**Execution:**
 
-1. **Composio platform stats** — pulled via `executeTool(config, '<TOOL_SLUG>', args)` in `composio-helpers.js`, scoped by `config.composio.userId`. Composio resolves the right connected account from the `user_id` + toolkit.
-   - TikTok: `TIKTOK_LIST_VIDEOS` + `TIKTOK_GET_USER_STATS`.
-   - Instagram: `INSTAGRAM_GET_MEDIA` + `INSTAGRAM_GET_INSIGHTS`.
-   - Facebook: equivalent Composio endpoints.
-   - Docs: https://docs.composio.dev/tools/
-2. **Google Analytics** (if `config.analytics.googleAnalytics.enabled`).
-   - Property: `config.analytics.googleAnalytics.propertyId`.
-   - Track sessions from social → booking page, UTM conversions.
-   - UTM format: `?utm_source={platform}&utm_medium=social&utm_campaign=carousel&utm_content=YYYY-MM-DD`.
-   - API docs: https://developers.google.com/analytics/devguides/reporting/data/v1
-3. **Booking data.**
-   - `manual` → orchestrator asks the owner each morning.
-   - `api` → pull from booking platform.
-   - `utm` → infer from Google Analytics conversions.
+1. `read_file` `~/social-marketing/config.json` for timezone, bookingTracking method, platforms enabled.
+2. Invoke `terminal`:
+   ```bash
+   node ~/restaurant-social-marketing-skill/scripts/daily-report.js --config ~/social-marketing/config.json --days 3
+   ```
+   The script pulls Composio platform stats for each enabled platform (TikTok, Instagram, Facebook), pulls booking data per `bookingTracking.method`, cross-references views↔bookings over a 3-day window, and writes `~/social-marketing/reports/<YYYY-MM-DD>-daily.md` + appends to `~/social-marketing/hook-performance.json`.
+3. `read_file` the daily report; extract the Telegram-summary block at the bottom (script prints `---TELEGRAM-SUMMARY---` markers).
+4. `memory` append the day's diagnosis + action so next session knows yesterday's verdict.
+5. Return the 5-sentence summary to the orchestrator.
 
-### Diagnostic framework
+**Diagnostic framework + hook-performance schema + booking-tracking branches:** [references/daily-analytics.md](references/daily-analytics.md).
 
-Applied to every daily report:
+## Module B — Weekly Trend Research (Scheduled, Monday 09:00)
 
-| Views | Bookings | Diagnosis            | Action                                          |
-|-------|----------|----------------------|-------------------------------------------------|
-| High  | Up       | Working              | Scale — 3 hook variations now.                  |
-| High  | Flat     | CTA broken           | Test new slide 6 text; check booking page.      |
-| Low   | Up       | Hook broken          | Content converts, nobody sees it — fix slide 1. |
-| Low   | Flat     | Full reset           | New format; trigger trend research.             |
+**Trigger:** cron Monday 09:00 local. Also on `show trends` command if no report exists for this week.
 
-### Daily report output
+**Execution:**
 
-- Save: `social-marketing/reports/YYYY-MM-DD-daily.md`.
-- Telegram summary (returned to orchestrator): **max 5 sentences, plain language**. Include: best performer, what to do today, one suggested hook.
+1. Compute date tokens: `<current month>`, `<current year>`, `<current month year>`.
+2. `read_file` `~/social-marketing/config.json` for `country` (gates the local-market query bucket).
+3. Invoke `web_search` for each query in the buckets below — parallelize if Hermes supports multi-query. Full query list: [references/trend-queries.md](references/trend-queries.md).
+   - Platform updates (algorithm changes, format rollouts)
+   - Viral formats in restaurant / food niche
+   - Industry trends (hospitality content strategy)
+   - Local market (Sweden / Norway when `country in [SE, NO]`)
+4. For each result, `web_extract` for body content when the snippet isn't enough.
+5. Synthesize findings — you (LLM) do the synthesis, not a script. Write:
+   - Structured: `~/social-marketing/trend-report.json` (schema in [references/trend-queries.md](references/trend-queries.md))
+   - Narrative: `~/social-marketing/reports/trend-reports/<YYYY-MM-DD>-weekly.md`
+   (use `patch` or `terminal` to write)
+6. `memory` append: the top new format found + whether to test next week.
+7. Return Monday summary to orchestrator:
+   > *"Quick update: [2 sentences on what's working]. I'm going to try [format] for your posts this week."*
 
-### Hook performance tracking
+The old `scripts/weekly-research.js` only wrote a query plan — we now do the actual web work in-session.
 
-Write to `social-marketing/hook-performance.json` for every post:
+## Module C — Self-Improving Loop
 
-```json
-{
-  "date": "2026-04-15",
-  "postId": "2026-04-15-1130",
-  "hook": "This pasta has been made the same way since 1987...",
-  "category": "story-behind-dish",
-  "approach": "img2img",
-  "platform": "instagram",
-  "viewsDelta": 12400,
-  "bookingsDelta": 3,
-  "ctaUsed": "Book at [Restaurant] — link in bio"
-}
-```
+Runs after every Module B completes, and after every 5 posts (whichever comes first).
 
-Decision rules:
-- **50K+ views** → double down; spawn 3 variations immediately.
-- **10K–50K** → keep in rotation.
-- **1K–10K** → 1 more variation.
-- **<1K twice** → drop; try a different category.
+**Execution:**
 
----
+1. `memory` → pull the last 20 `hook-performance` records for this restaurant.
+2. Group by `hookCategory`. For each category:
+   - Average `viewsDelta` and `bookingsDelta`.
+   - Count consecutive misses (<1K views twice → drop signal).
+3. Compare against the trend report — any new format flagged `testNext: true`?
+4. Write changes to `~/social-marketing/skill-updates.json` (append-only log: date, what changed, why).
+5. Surface to orchestrator when a category drops from the rotation:
+   > *"The price-reveal hook has missed 3 times in a row. Dropping it, switching to [X]."*
 
-## Module B — Weekly Research Cron
+**Decision thresholds + strategy.json schema:** [references/self-improvement.md](references/self-improvement.md).
 
-Runs every **Monday at 09:00** (restaurant timezone). Uses adapted `social-trend-monitor-hermes` methodology + web search.
-
-### Search queries
-
-Compute `[current month year]` at run time.
-
-**Platform updates:**
-- `"TikTok slideshow algorithm [current month year]"`
-- `"Instagram carousel reach algorithm [current month year]"`
-- `"Instagram keyword SEO captions [current year]"`
-
-**Viral formats:**
-- `"restaurant TikTok viral [current month year]"`
-- `"food Instagram carousel performing [current month]"`
-- `"restaurant social media trend [current month year]"`
-
-**Industry:**
-- `"restaurant marketing social media [current month year]"`
-- `"hospitality content strategy [current year]"`
-
-**Sweden / Norway specific (if `config.country` matches):**
-- `"restaurang TikTok trend [current month]"`
-- `"mat Instagram Sverige trend [current month]"`
-
-### Output
-
-Save to `social-marketing/trend-report.json`:
-
-```json
-{
-  "weekOf": "2026-04-14",
-  "platformUpdates": [
-    { "platform": "instagram", "update": "...", "impact": "...", "action": "..." }
-  ],
-  "trendingFormats": [
-    { "format": "...", "restaurantApplication": "...", "testNext": true }
-  ],
-  "hookTrends": ["...", "..."],
-  "swedishMarket": ["...", "..."],
-  "upcomingDates": ["Midsommar in 9 weeks", "..."],
-  "recommendedActions": ["...", "..."]
-}
-```
-
-Also save a narrative Markdown version: `social-marketing/reports/trend-reports/YYYY-MM-DD-weekly.md`.
-
-### Monday message (returned to orchestrator)
-
-> *"Quick update this week: [2 sentences on what's working]. I'm going to try [format] for your posts this week."*
-
----
-
-## Module C — Self-Improving Skill Loop
-
-Runs after each weekly research. Evaluates findings vs. current strategy and logs every change to `social-marketing/skill-updates.json` (date, what changed, why).
-
-### New format found
-
-- Add to the active format library in `strategy.json`.
-- Test in the next 2 posts.
-- Track vs. existing formats in `hook-performance.json`.
-- If better → promote to primary rotation.
-- If worse after 2 attempts → drop.
-
-### Algorithm change detected
-
-- Update content generation rules immediately.
-- Orchestrator notifies owner: *"TikTok changed something this week — I've adjusted how I write captions."*
-
-### Format consistently underperforming
-
-- Surface for the orchestrator: *"The price-reveal hook has missed 3 times in a row. Dropping it, switching to [X]."*
-- Remove from rotation in `strategy.json`.
-
-### What cannot self-update
-
-API keys, platform connections, core skill architecture. Those changes require the Installer.
-
----
+What cannot self-update: API keys, platform connections, skill architecture. Those require the Installer.
 
 ## Module D — Competitor Research (On Demand)
 
-Triggered by the orchestrator when the owner types *"research competitors"*, or by the Installer from the terminal. Takes 15–30 min. The orchestrator confirms with the owner before starting.
+**Trigger:** `research competitors` from the orchestrator. Takes 15–30 min. The orchestrator confirms with the owner before starting.
 
-### Research scope
+**Execution:**
 
-1. **TikTok** — niche + city, 3–5 competitor accounts.
-2. **Instagram** — same, top-performing posts.
-3. **Google Maps** — recent reviews of the top 3 competitors (content gold — real-customer language).
-4. **TripAdvisor** — same.
-5. **Local press** — `"best [cuisine] [city] [current year]"`.
+1. `read_file` `~/social-marketing/restaurant-profile.json` for cuisine, location, typicalGuest.
+2. Use `web_search` to find 3–5 competitor accounts:
+   - `"<cuisine> TikTok <city>"` and `"best <cuisine> <city> 2026"`
+   - `"<cuisine> Instagram <city>"`
+3. For each competitor, use `browser_navigate` + `browser_vision` to inspect their Instagram or TikTok profile:
+   - Capture: handle, follower count, top-performing hook formats, avg vs best views, posting frequency, CTA style.
+   - **Most important: what they are NOT doing.** Gap analysis is the valuable output.
+4. `web_search` + `web_extract` on Google Maps and TripAdvisor review pages for the top 3 competitors — extract reviewer language (real phrases real customers use).
+5. `web_search` for local press mentions: `"best <cuisine> <city> <year>"`.
+6. Synthesize — write:
+   - Structured: `~/social-marketing/competitor-research.json`
+   - Narrative: `~/social-marketing/reports/competitor/<YYYY-MM-DD>.md`
+7. Return a gap-focused summary to the orchestrator — not a competitor-stats dump. Example:
+   > *"Nobody in <city> is doing the ingredient-sourcing story format. <Competitor A> has weak CTAs. Our angle: <specific opportunity>."*
 
-### Per competitor capture
+Full template + per-competitor capture fields: [references/competitor-research.md](references/competitor-research.md).
 
-- Handle, follower count, top hook formats, avg vs. best views, posting frequency, CTA style, **what they're NOT doing**.
+## What You Do Not Do
 
-### Gap analysis (the most valuable output)
+- Talk to the owner directly — orchestrator owns Telegram.
+- Write captions or generate posts — content-preparation owns that.
+- Post to platforms — platform posting belongs to the orchestrator's post step.
+- Fabricate data. If a source is disabled (e.g. booking tracking = manual, GA = off), surface the gap honestly so the orchestrator can ask the owner. A made-up number is a trust killer.
 
-> *"Nobody in Stockholm is doing the ingredient-sourcing story format. [Competitor A] has weak CTAs. Our angle: [specific opportunity]."*
+## Cross-Client Aggregator (Network-Level)
 
-Save to `social-marketing/competitor-research.json` and a Markdown summary to `social-marketing/reports/competitor/YYYY-MM-DD.md`. Refresh monthly or on demand.
-
----
-
-## Cross-Client Aggregator (Network-Level Learning)
-
-This is not a module you run — it's a separate agent (`scripts/aggregator.js`) that executes every Monday across all client branches.
-
-### What you expose
-
-This skill writes `hook-performance.json` in a consistent structural schema so the aggregator can strip content and extract pattern learnings. Keep the schema stable.
-
-### What the aggregator does
-
-1. Pulls `hook-performance.json` from all active client branches.
-2. Strips all restaurant-specific content (dish names, restaurant names, captions).
-3. Keeps only structural data: format type, hook category, views delta, bookings delta, img2img vs. txt2img, posting time.
-4. Finds patterns that appear across 3+ different clients with consistent direction.
-5. Extracts the structural insight — not the content.
-6. Opens a GitHub PR to `main` with the proposed skill update and supporting data.
-7. Installer reviews, merges, or rejects.
-
-### What the aggregator never does
-
-- Never auto-merges.
-- Never transfers content between clients.
-- Never updates a live client before the Installer merges.
-- Never proposes updates based on fewer than 3 clients.
-
----
-
-## Output Contract
-
-Every scheduled run saves:
-- Structured JSON (`hook-performance.json`, `trend-report.json`, `competitor-research.json`, `skill-updates.json`).
-- A Markdown report under `social-marketing/reports/`.
-- A short summary returned to the orchestrator for Telegram delivery.
-
-Every on-demand run returns the Markdown summary plus the structured JSON path.
-
-You never produce output destined directly for the owner — the orchestrator reads your summary and rewrites it in the owner's tone and language.
-
----
-
-## Scripts You Call
-
-- `scripts/daily-report.js` — Module A (analytics cron).
-- `scripts/weekly-research.js` — Module B (trend cron).
-- `scripts/competitor-research.js` — Module D.
-- `scripts/aggregator.js` — cross-client (run at network level, not per-client).
-
-All scripts read `social-marketing/config.json` and respect `config.analytics.enabled` flags. Do not fabricate data when a source is disabled — surface the gap honestly so the orchestrator can ask the owner.
+Separate agent (`scripts/aggregator.js`) runs at network level, not per-client. It strips hook-performance records of restaurant-specific content and finds patterns across 3+ clients, then opens a PR to the skills repo proposing updates. Your job here is to **keep the hook-performance schema stable** so the aggregator can parse records from all clients. Schema: [references/daily-analytics.md](references/daily-analytics.md).

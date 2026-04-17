@@ -1,212 +1,178 @@
 ---
 name: content-preparation
-description: Asset pipeline for restaurant social content. Decides what to create and how. Finds reference photos in Google Drive, picks the image-generation approach (img2img vs txt2img), coordinates external food-photography and SEO skills, and returns ready-to-post slides with overlays and captions.
-metadata:
-  hermes-agent:
-    requirements:
-      env: []
-      binaries:
-        - node
+description: Asset pipeline for restaurant social content. Given a dish + context, produces 6 finished slides with overlays and a caption ready to post. Load this when the restaurant-marketing orchestrator calls for a post (generate post, generate pool), a promotion, or spontaneous content. Never talks to the owner directly.
 ---
 
-# Content Preparation (Asset Pipeline)
+# Content Preparation
 
-You decide **what** to create and **how**. You do not decide when to post, who to talk to, or what the strategy is — that's `restaurant-marketing`. You do not implement image-generation prompt patterns or SEO formulas — those live in the adapted external skills (`food-photography-hermes`, `social-media-seo-hermes`).
+You produce posts. The [restaurant-marketing orchestrator](../restaurant-marketing/SKILL.md) decides when; you decide what and how. You never message the owner; errors go back through the orchestrator.
 
-Your output is always the same shape: a set of ready-to-post images with text overlays + a caption, saved under `social-marketing/posts/YYYY-MM-DD-HHmm/`.
-
----
-
-## Content-Type Decision Matrix
-
-For every post, evaluate in this order:
+Your output is always the same shape, saved under `~/social-marketing/posts/<YYYY-MM-DD-HHmm>/`:
 
 ```
-1. WHAT CONTENT TYPE IS THIS?
-   ├── Regular dish post
-   ├── Promotion / time-sensitive
-   ├── Knowledge-base story (chef, recipe origin, sourcing)
-   ├── Trend-driven format (from weekly research)
-   └── Spontaneous moment
-
-2. DO WE HAVE A REAL PHOTO?
-   ├── Yes → img2img (primary, always preferred)
-   └── No  → txt2img (fallback)
-
-3. WHAT IS THE URGENCY?
-   ├── Same-day / tonight → speed over quality, eco mode
-   └── Planned            → quality mode, take the time
-
-4. WHAT DID WEEKLY RESEARCH SAY?
-   └── Apply trending format if relevant to this content type
+slide-1.png … slide-6.png        — final images with text overlays
+slide-N-raw.png                  — pre-overlay (kept for debugging)
+caption.txt                      — keyword-first caption with UTM
+metadata.json                    — { contentType, approach, platform, dishes, hookCategory, hookText, promptVersion }
 ```
 
-Never reverse this order. Photo inventory is checked **before** prompt construction. Urgency is checked **before** choosing quality params.
+`metadata.json` is the record `memory` uses later to correlate hooks → engagement. Never skip writing it.
 
----
+## The Decision Matrix (Run in Order)
 
-## Image Generation by Scenario
+For every post:
 
-All image generation calls go through **OpenRouter** using whatever model is set in `config.imageGen.model` (see `templates/config.template.json`). This is the only model this skill suite configures — chat, caption writing, and research all run on Hermes's own model. When a better image model ships, the Installer updates this one field; no code changes. See `docs/openrouter-notes.md` for endpoint details and the img2img fallback contract.
+1. **Content type** — regular dish, promotion, knowledge-base story, trend-driven, spontaneous. Orchestrator passes this as input.
+2. **Reference photos?** — `read_file` the inventory at `~/social-marketing/photo-inventory.json`. If `byDish[<dishName>].bestFile` exists → **img2img** (preferred). Otherwise → **txt2img**.
+3. **Urgency?** — `fast` (same-day promo) vs `quality` (planned). Passed by orchestrator or inferred from content type.
+4. **Trending format?** — `read_file` `~/social-marketing/trend-report.json` if present. If a format is flagged `testNext: true` and fits the content type, apply it.
 
-### Real photo exists → img2img (always preferred)
+Never skip step 2. Inventory check happens before prompt construction.
 
-Even a blurry phone photo outperforms pure text-to-image. The model understands the actual dish, colors, and plating. Output: a polished professional version grounded in the real food.
+## Pass-by-Pass Execution (Hermes Tool Calls)
 
-```
-photo from Drive
-  → pass as image reference
-  → configured image model via OpenRouter chat completions (image modality)
-  → polished version that looks like YOUR food, not generic AI food
-```
-
-Keep all 6 slides visually coherent using a consistent base prompt across the set (same table, same plates, same lighting vocabulary). The `session_id` concept from `food-photography-hermes` applies here as a consistent base-prompt pattern.
-
-### No photo, rich knowledge base → txt2img with specifics
-
-Pull dish details from `knowledge-base/menu.json` and `knowledge-base/recipes.json`. Specific beats generic every time.
+### Step 1: Gather inputs
 
 ```
-menu.json + recipes.json
-  → extract: ingredients, textures, colors, plating, sourcing
-  → detailed prompt:
-    "iPhone photo of hand-pulled pasta, bronze-die extruded,
-     rough texture visible, slow-cooked pork ragu with pulled
-     texture, shaved pecorino, fresh basil, white ceramic bowl,
-     dark walnut table, warm candlelight, same table throughout
-     all slides"
+read_file: ~/social-marketing/config.json
+read_file: ~/social-marketing/restaurant-profile.json
+read_file: ~/social-marketing/photo-inventory.json        (ok if missing)
+read_file: ~/social-marketing/trend-report.json            (ok if missing)
+memory: last 10 hook-performance entries for this restaurant
 ```
 
-### Trend-driven format → txt2img adapted to the format
+### Step 2: Pick a hook + write overlay texts
 
-The latest `trend-report.json` says "ingredient flatlay" is blowing up → adapt the prompt to that format regardless of the dish.
+Load [social-media-seo-hermes/references/hooks.md](../../adapted-skills/social-media-seo-hermes/references/hooks.md) via `skill_view('social-media-seo-hermes', 'references/hooks.md')`. Pick a hook category based on: content type, restaurant fit (cuisine + vibe + typical guest), memory of what's worked, trend-report hints. Write 2–3 hook variants in the restaurant's voice. Pick the strongest.
 
-### Same-day promotion, no photo → txt2img fast
+Write 6 overlay texts (4–6 words, 3–4 lines per slide). Slide 1 is the hook; Slide 6 is the CTA from [social-media-seo-hermes/references/ctas.md](../../adapted-skills/social-media-seo-hermes/references/ctas.md). Middle slides build the narrative.
 
-Use standard (not high) quality params on OpenRouter. Skip iterative refinement. Get it out fast.
+### Step 3: Build prompts.json and texts.json
 
-### Knowledge-base story → mix
+Load [food-photography-hermes/SKILL.md](../../adapted-skills/food-photography-hermes/SKILL.md) for lighting presets and plating vocabulary tied to the restaurant's vibe.
 
-- Slides 1–4: real dish photos (img2img).
-- Slides 5–6: AI-generated supporting imagery (ingredient sourcing, kitchen scene).
+Write two files to `/tmp/` (Hermes `terminal` tool):
 
----
+```bash
+cat > /tmp/prompts-<ts>.json <<EOF
+{
+  "base": "<shared base prompt anchoring all 6 slides: same table, same plates, same lighting, cuisine-appropriate vibe vocabulary from food-photography-hermes>",
+  "slides": [
+    "<slide 1: hero shot of the dish>",
+    "<slide 2: alt angle or context>",
+    "<slide 3: hand / detail shot>",
+    "<slide 4: kitchen or process>",
+    "<slide 5: dining-room or ambiance>",
+    "<slide 6: final hero with top-third clear for overlay — leave room for the CTA>"
+  ]
+}
+EOF
 
-## Google Drive Inventory
+cat > /tmp/texts-<ts>.json <<EOF
+["<overlay 1 — the hook>", "<overlay 2>", "<overlay 3>", "<overlay 4>", "<overlay 5>", "<overlay 6 — the CTA with restaurant name>"]
+EOF
+```
 
-Run `scripts/drive-inventory.js` on first setup and after every sync.
+### Step 4: Generate slides
 
-For each photo: detect the dish via vision, categorize (`dish` / `ambiance` / `kitchen` / `exterior`), note quality, track usage.
+Invoke `terminal`:
+
+```bash
+node ~/restaurant-social-marketing-skill/scripts/generate-slides.js \
+  --config ~/social-marketing/config.json \
+  --output ~/social-marketing/posts/<timestamp> \
+  --prompts /tmp/prompts-<ts>.json \
+  --platform <tiktok|instagram|facebook> \
+  --urgency <fast|quality> \
+  --dish "<dish name>"
+```
+
+If a matching reference photo exists in inventory, the script auto-selects img2img. Otherwise txt2img. Takes 30–90 seconds.
+
+Exit code 0 + 6 `slide-N-raw.png` files = success. Non-zero = read the error and either retry once or surface to orchestrator.
+
+### Step 5: Add text overlays
+
+Invoke `terminal`:
+
+```bash
+node ~/restaurant-social-marketing-skill/scripts/add-text-overlay.js \
+  --input ~/social-marketing/posts/<timestamp> \
+  --texts /tmp/texts-<ts>.json
+```
+
+Produces `slide-1.png` … `slide-6.png` (final). If `canvas` native dep is missing the script logs a warning and returns the raw slides only — orchestrator can still send them.
+
+### Step 6: Write caption
+
+Compose the caption yourself (LLM reasoning) using the keyword-first rules from [social-media-seo-hermes/SKILL.md](../../adapted-skills/social-media-seo-hermes/SKILL.md). First 125 chars lead with what the post is about + restaurant name + city; hook nuance comes after; hashtags from [social-media-seo-hermes/references/keywords.md](../../adapted-skills/social-media-seo-hermes/references/keywords.md); CTA line with UTM parameters.
+
+Write to `~/social-marketing/posts/<timestamp>/caption.txt` via `patch` or `terminal`.
+
+UTM format (append to `restaurant-profile.json.bookingUrl`):
+```
+?utm_source=<platform>&utm_medium=social&utm_campaign=<contentType>&utm_content=<YYYY-MM-DD>
+```
+
+### Step 7: Write metadata.json
 
 ```json
 {
-  "lastUpdated": "2026-04-15",
-  "totalPhotos": 47,
-  "byDish": {
-    "Pasta Carbonara": {
-      "files": ["carbonara-1.jpg", "carbonara-2.jpg"],
-      "bestFile": "carbonara-2.jpg",
-      "quality": "high",
-      "lastUsed": "2026-04-10",
-      "usedInPosts": 3
-    }
-  },
-  "byCategory": {
-    "dishes": 31,
-    "ambiance": 8,
-    "kitchen": 5,
-    "exterior": 3
-  },
-  "missing": ["desserts", "bar area"],
-  "note": "12 pasta photos, 0 dessert photos — trigger knowledge gap probe"
+  "generatedAt": "<ISO timestamp>",
+  "contentType": "<regular|promo|knowledge-story|trend|spontaneous>",
+  "platform": "<tiktok|instagram|facebook>",
+  "approach": "<img2img|txt2img>",
+  "dish": "<dish name>",
+  "hookCategory": "<from hooks.md>",
+  "hookText": "<exact slide 1 text>",
+  "referencePhoto": "<path or null>",
+  "promptBase": "<first 200 chars of the base prompt>"
 }
 ```
 
-**Before every post:** check inventory.
-- Real photo exists for this dish → img2img.
-- None → txt2img.
-- A category has 0 photos → write to the knowledge-gap queue so the orchestrator can probe naturally.
+This is what `memory` indexes later.
 
----
+### Step 8: Return to orchestrator
 
-## Text Overlays
+Return the directory path and a one-line summary. Let the orchestrator handle Telegram delivery and posting.
 
-After image generation, add text overlays. Prefer `social-media-carousel` (inference-sh-8) which uses `infsh/html-to-image` — cleaner than node-canvas for most deployments. Node-canvas remains as a fallback for environments that can't run headless Chromium.
+## Platform Rules
 
-**Overlay rules** (passed to whichever tool renders):
-- **Reactions, not labels.** *"Wait… is this actually homemade??"* not *"Homemade pasta"*.
-- 4–6 words per line, 3–4 lines per slide.
-- No emoji (rendering issues across platforms).
-- Safe zones: no text in the bottom 20% (TikTok controls) or top 10% (status bar).
-- Slide 6 is always the CTA: *"Book at [Restaurant] — link in bio"*.
-- Caption is written by `social-media-seo-hermes` with keyword-first Instagram SEO; do not regenerate caption logic here.
+Always check `config.platforms.<name>.enabled` before generating. Generate only for enabled platforms.
 
----
+| Platform  | Aspect        | Slides    | Posting mode |
+|-----------|---------------|-----------|--------------|
+| TikTok    | 9:16 portrait | 6         | Draft — owner adds trending sound |
+| Instagram | 4:5 portrait  | 6 (up to 10) | Direct publish |
+| Facebook  | 16:9 landscape | 1 (hero)  | Single photo |
 
-## Platform Dimensions
+Never generate a TikTok set if TikTok is disabled. Paths always `~/social-marketing/…` — never `tiktok-marketing/`.
 
-Always check `config.platforms` before generating. Generate only the formats for enabled platforms.
+## Drive Workflow
 
-| Platform  | Dimensions | Slides     | Notes                                 |
-|-----------|------------|------------|---------------------------------------|
-| TikTok    | 1024×1536  | 6          | Post as draft — owner adds music      |
-| Instagram | 1080×1350  | Up to 10   | Posts directly                        |
-| Facebook  | 1200×630   | 1          | Single image                          |
+On first setup and after every Drive sync:
 
-**Never** generate a TikTok portrait set if TikTok is disabled. **Never** hardcode paths to `tiktok-marketing/` — always `social-marketing/`.
-
----
-
-## UTM Tagging
-
-Every caption with a booking link must carry UTM parameters. The orchestrator passes `config.analytics.utmSource` and the platform name. You append to `config.analytics.bookingUrl`:
-
-```
-?utm_source=instagram
-&utm_medium=social
-&utm_campaign=carousel
-&utm_content=YYYY-MM-DD
+```bash
+node ~/restaurant-social-marketing-skill/scripts/drive-sync.js --config ~/social-marketing/config.json
+node ~/restaurant-social-marketing-skill/scripts/drive-inventory.js --config ~/social-marketing/config.json
 ```
 
-This is what powers `marketing-intelligence` Module A's conversion tracking. A caption without UTM on an enabled booking URL is a bug.
+`drive-inventory.js` runs vision classification per photo (via config's OpenRouter credential), categorizes into `dishes/ambiance/kitchen/exterior`, and updates `~/social-marketing/photo-inventory.json`. If a category is empty, it notes the gap in `inventory.missing` for the orchestrator to probe naturally.
 
----
+**Critical:** Drive photos are REFERENCES for image generation — they are NOT the images posted to social. Never mention them as the post content. Full details: [references/drive-workflow.md](references/drive-workflow.md).
 
-## Output Contract
+## What You Do NOT Do
 
-Every call returns:
+- Decide when to post (orchestrator).
+- Talk to the owner (orchestrator).
+- Write prompt patterns from scratch (use food-photography-hermes).
+- Invent hook formulas (use social-media-seo-hermes).
+- Run analytics or research (marketing-intelligence).
+- Post to social platforms directly. Platform posting scripts live next to `generate-slides.js` and are invoked by the orchestrator's post step, not here. If you find yourself calling `post-to-*.js`, stop — you're out of scope.
 
-```
-social-marketing/posts/YYYY-MM-DD-HHmm/
-├── slide-1-raw.png     ← pre-overlay
-├── slide-1.png         ← final with overlay
-├── slide-2.png
-├── ...
-├── caption.txt         ← keyword-first caption with UTM
-└── metadata.json       ← { contentType, approach, platform, dishes, sourcePhotos, promptVersion }
-```
+## Error Handling
 
-`metadata.json` is what `hook-performance.json` reads when logging performance. Do not skip it.
-
----
-
-## What You Do Not Do
-
-- You do not decide when to post. The orchestrator calls you.
-- You do not write captions from scratch. Delegate to `social-media-seo-hermes` knowledge.
-- You do not invent prompt patterns. Use `food-photography-hermes` vocabulary.
-- You do not duplicate analytics or research. That is `marketing-intelligence`.
-- You do not talk to the owner. Only the orchestrator does.
-
-If you find yourself composing a Telegram message or computing views-per-booking, you're in the wrong skill.
-
----
-
-## Scripts You Call
-
-- `scripts/drive-sync.js` — pull fresh photos from Google Drive via Composio.
-- `scripts/drive-inventory.js` — categorize, tag, update `photo-inventory.json`.
-- `scripts/generate-slides.js` — OpenRouter image generation (img2img or txt2img).
-- `scripts/add-text-overlay.js` — render overlays (html-to-image preferred, node-canvas fallback).
-
-All scripts read from `config.json` and write under `social-marketing/`. None of them talk directly to the owner — error messages go back through the orchestrator.
+- `generate-slides.js` non-zero → retry once → surface to orchestrator with the stderr text.
+- `add-text-overlay.js` non-zero (canvas missing) → return raw slides, flag the overlay miss to orchestrator.
+- Inventory file missing or corrupt → fall back to txt2img with profile context only.
+- Trend report missing → evergreen hook categories only (story-behind-dish, reaction, sourcing).
