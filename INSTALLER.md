@@ -10,7 +10,7 @@
 |---|--------------------------------|-------------------------------------------------------------------|
 | 1 | Telegram `botToken` + `chatId` | Ask the human. Token from @BotFather; chatId via `getUpdates`.    |
 | 2 | `composio.apiKey`              | Ask the human. Org-scoped API key (`ak_…`) from https://app.composio.dev. One Composio Organization per restaurant client — the key is already scoped to that org. |
-| 3 | `composio.userId`              | Ask the human. Per-restaurant entity identifier within that org. All OAuth connections (Instagram, TikTok, Facebook, Drive) + the OpenRouter credential live under this userId. |
+| 3 | `composio.userId`              | Ask the human. **Per-restaurant entity identifier** within that org — NOT the operator's personal Composio account ID. All OAuth connections (Instagram, TikTok, Facebook, Drive) must be created under THIS entity in the Composio dashboard. Mismatch → scripts fail with *"No connected accounts found"*. |
 
 **That is the complete list.** Plus which platforms are enabled (booleans). Nothing else.
 
