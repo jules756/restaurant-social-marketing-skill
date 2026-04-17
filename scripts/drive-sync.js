@@ -16,7 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeTool, findOrCreateDriveFolder, loadConfig, PLATFORMS } = require('./composio-helpers');
+const { executeTool, findDriveFolderByName, findOrCreateDriveFolder, loadConfig, PLATFORMS } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -69,7 +69,15 @@ async function listFolder(folderId) {
     page_size: 1000
   });
   const files = result.data?.files || result.files || result.data || [];
-  return files.filter((f) => (f.mimeType || f.mime_type || '').startsWith('image/'));
+  return files;
+}
+
+function isImage(f) {
+  return (f.mimeType || f.mime_type || '').startsWith('image/');
+}
+
+function isFolder(f) {
+  return (f.mimeType || f.mime_type || '') === 'application/vnd.google-apps.folder';
 }
 
 async function downloadFile(file) {
@@ -81,14 +89,39 @@ async function downloadFile(file) {
   return Buffer.from(b64, 'base64');
 }
 
+/**
+ * Always search Drive for the folder by name, save the ID back to config.
+ * Caching the folder ID is unreliable — the folder could be moved, deleted,
+ * renamed, or a duplicate created. Better to search every time and keep
+ * config in sync with reality.
+ */
 async function resolveFolderId() {
-  if (drive.folderId) return drive.folderId;
   if (!drive.folderName) {
-    throw new Error('config.googleDrive.folderName is required when folderId is absent');
+    throw new Error('config.googleDrive.folderName is required (default: "akira-agent_src")');
   }
+  console.log(`Searching Drive for folder "${drive.folderName}" …`);
+  const foundId = await findDriveFolderByName(config, drive.folderName);
+  if (foundId) {
+    // Persist if changed (or write fresh)
+    if (drive.folderId !== foundId) {
+      drive.folderId = foundId;
+      const fullConfig = loadConfig(configPath);
+      fullConfig.googleDrive = drive;
+      fs.writeFileSync(path.resolve(configPath), JSON.stringify(fullConfig, null, 2) + '\n');
+      console.log(`  ✏  Updated config.googleDrive.folderId → ${foundId}`);
+    }
+    return foundId;
+  }
+  // Not found — create it (matches the Installer UX where the folder may
+  // not exist yet the first time we sync).
   const { id, created } = await findOrCreateDriveFolder(config, drive.folderName);
   if (created) {
     console.log(`  ✨ Created new Drive folder "${drive.folderName}" (${id})`);
+    // Persist the new folder ID
+    drive.folderId = id;
+    const fullConfig = loadConfig(configPath);
+    fullConfig.googleDrive = drive;
+    fs.writeFileSync(path.resolve(configPath), JSON.stringify(fullConfig, null, 2) + '\n');
   }
   return id;
 }
@@ -96,9 +129,24 @@ async function resolveFolderId() {
 (async () => {
   const folderId = await resolveFolderId();
   const idx = loadIndex(folderId);
-  console.log(`Syncing Drive folder ${drive.folderName || folderId} (${folderId}) → ${cacheDir}`);
-  const files = await listFolder(folderId);
-  console.log(`Found ${files.length} image(s) in folder.`);
+  console.log(`Syncing Drive folder ${drive.folderName} (${folderId}) → ${cacheDir}`);
+  const entries = await listFolder(folderId);
+  const files = entries.filter(isImage);
+  const subfolders = entries.filter(isFolder);
+  console.log(`Found ${files.length} image(s), ${subfolders.length} subfolder(s) in folder.`);
+
+  // If root is empty of images but has subfolders, tell the user where to
+  // put photos (prevents silent "0 found" confusion).
+  if (files.length === 0 && subfolders.length > 0) {
+    console.log('');
+    console.log(`  No images at root of "${drive.folderName}". Subfolders present:`);
+    subfolders.forEach((s) => console.log(`    - ${s.name || s.id}`));
+    console.log(`  Tip: drop images directly into "${drive.folderName}" root, or pass --recurse to also scan subfolders (not yet implemented).`);
+  } else if (files.length === 0 && subfolders.length === 0) {
+    console.log('');
+    console.log(`  Folder "${drive.folderName}" (${folderId}) is empty.`);
+    console.log('  Check: are you adding photos to the same Google account Composio is connected to?');
+  }
 
   let added = 0;
   let skipped = 0;
