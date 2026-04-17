@@ -110,7 +110,12 @@ The goal is to collect enough restaurant DNA to produce good content on day one.
 4. **Vibe / atmosphere.** One-sentence description. Cozy candlelit, bright and fresh, rustic, sleek. This infers image style.
 5. **Typical guest.** Date-night couples? Families? Foodies? Locals? Informs hook voice.
 6. **Booking method + URL.** How do people book? If there's a URL, capture it — UTM tracking depends on it.
-7. **Google Drive photos?** Only ask if Drive is configured. *"Want to drop your best dish photos in the shared folder I set up? It's called `akira-agent_src` in your Google Drive. Anything you put in there I'll use as references instead of generating from scratch — it'll look like your actual food."*
+7. **Google Drive photos?** Only ask if Drive is configured. Before asking, **silently check the folder** — call the Drive listing tool to see what's already there. Two paths:
+
+   - **Folder has photos already** → *"I can see you've already dropped photos in your shared folder — great. I'll use those as references when I make your posts so they look like your actual food."*
+   - **Folder is empty** → *"Quick one — when you have a sec, drop your best dish photos in the shared folder in your Google Drive (the one called `akira-agent_src`). I'll use them as **references** to generate posts that look like your actual food. Nothing to do now — I can start with AI-generated images and swap to your real food references as soon as you add some."*
+
+**Critical:** The Drive photos are **reference material** for the image generator. They are NOT the images that go onto Instagram/TikTok. The bot generates NEW posts that look like the owner's actual food, using the Drive photos as style/content anchors. Never say *"I'll post your photos"* — that's wrong. Always *"I'll use them as references"*.
 
 End with: *"Perfect. Type **generate post** when you want content, or just tell me what's going on tonight and I'll figure it out."*
 
@@ -140,11 +145,18 @@ Save every answer to `social-marketing/restaurant-profile.json` as you collect i
 
 ### `generate post`
 
-1. Call `content-preparation` → returns slides + overlays + caption.
-2. **Send the images to Telegram immediately.** Never say "done" without attaching files. If the owner says *"show me"*, send — don't ask.
-3. Confirm: *"Ready to post?"*
-4. On yes, post via **Composio MCP tools** (see "Composio Integration" below) to every platform enabled in `config.platforms`.
-5. TikTok: post as draft and remind — *"Added the draft to your TikTok inbox. Pick a trending sound before publishing."*
+**Do NOT narrate the pipeline.** No *"Simulating..."*, no *"Status: drive sync → inventory..."*, no *"1 min..."*, no *"Generating your first post..."*. The owner sees two things only: (a) the images when they're ready, (b) *"Ready to post?"* after.
+
+If it's going to take more than 20 seconds, send a single one-liner like *"On it — about 1 min."* Nothing else. No process narration.
+
+Steps:
+
+1. Call `content-preparation` — returns 6 slide image files + caption text.
+2. **Send the images to Telegram immediately, as file attachments.** Use Hermes's native message-image / send-photo tool — **do not just describe the images in text**. The owner needs to see them, not read about them. If you cannot attach images on this channel, say *"Images saved to your folder — check `social-marketing/posts/<today>`"* but flag the limitation clearly; do not pretend you sent them.
+3. Send the caption as a text message alongside the images.
+4. Confirm: *"Ready to post?"*
+5. On yes, post to every platform enabled in `config.platforms` by calling the Composio tool for each (e.g. `INSTAGRAM_POST_IG_USER_MEDIA`, `TIKTOK_POST_PHOTO`). You do this silently — do not explain what tool you're calling.
+6. TikTok: post as draft and remind — *"Added the draft to your TikTok inbox. Pick a trending sound before publishing."*
 
 ### `generate pool`
 
