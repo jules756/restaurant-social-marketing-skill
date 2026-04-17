@@ -14,10 +14,13 @@ Hermes Agent skills + Node scripts that turn a restaurant's social media into an
 - TikTok draft post (`post-to-tiktok.js`).
 - Facebook multi-photo carousel (`post-to-facebook.js`).
 
+**Crons (install via `./scripts/install-cron.sh`):**
+- `daily-report.js` — 10:00 local. Pulls IG post insights via Composio, computes yesterday vs 7d baseline, sends Telegram summary + diagnostic action.
+- `weekly-research.js` — Mondays 09:00. OpenRouter web-search (perplexity/sonar by default) synthesises platform updates, viral formats, hook trends, upcoming dates + 3 actions for the week. Delivered via Telegram.
+
 **Not wired up yet (next phase):**
 - Telegram-triggered `generate post` — Hermes orchestration layer still hallucinates instead of invoking scripts. All pipeline commands today are run manually from the VM terminal.
-- Drive img2img (bot uses real food photos as references). Scripts exist (`drive-sync.js`, `drive-inventory.js`); needs Composio Drive OAuth + first live sync.
-- Cron jobs (daily analytics at 10:00, weekly research Mondays at 09:00).
+- Drive img2img (bot uses real food photos as references). `drive-sync.js` saves the folder ID; AI picks which subfolder at post time.
 - Platform posting scripts for TikTok + Facebook need live verification.
 
 ## Known platform constraints
@@ -116,7 +119,7 @@ scripts/                          ← Node.js scripts (called by skills at runti
 ├── post-to-tiktok.js             ← TikTok draft (untested live)
 ├── post-to-facebook.js           ← Facebook multi-photo (untested live)
 ├── daily-report.js               ← Module A analytics cron
-├── weekly-research.js            ← Module B trend research (skeleton)
+├── weekly-research.js            ← Module B trend research cron (OpenRouter web search)
 ├── competitor-research.js        ← Module D competitor scan (skeleton)
 └── aggregator.js                 ← Cross-client pattern learning (network-level)
 
