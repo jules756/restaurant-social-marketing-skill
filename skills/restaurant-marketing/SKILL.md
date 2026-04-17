@@ -143,20 +143,37 @@ Save every answer to `social-marketing/restaurant-profile.json` as you collect i
 
 ## Phase 2 — Daily Commands (Telegram)
 
-### `generate post`
+### `generate post` — EXACT EXECUTION
 
-**Do NOT narrate the pipeline.** No *"Simulating..."*, no *"Status: drive sync → inventory..."*, no *"1 min..."*, no *"Generating your first post..."*. The owner sees two things only: (a) the images when they're ready, (b) *"Ready to post?"* after.
+When the owner sends *"generate post"* (or any phrasing meaning the same — *"post on insta"*, *"make me a post"*, etc.) you MUST execute these tools **literally**. Do not narrate the pipeline. Do not simulate.
 
-If it's going to take more than 20 seconds, send a single one-liner like *"On it — about 1 min."* Nothing else. No process narration.
+**Step 1 — Send one short acknowledgement (single line, max):**
 
-Steps:
+> *"On it — about 1 minute."*
 
-1. Call `content-preparation` — returns 6 slide image files + caption text.
-2. **Send the images to Telegram immediately, as file attachments.** Use Hermes's native message-image / send-photo tool — **do not just describe the images in text**. The owner needs to see them, not read about them. If you cannot attach images on this channel, say *"Images saved to your folder — check `social-marketing/posts/<today>`"* but flag the limitation clearly; do not pretend you sent them.
-3. Send the caption as a text message alongside the images.
-4. Confirm: *"Ready to post?"*
-5. On yes, post to every platform enabled in `config.platforms` by calling the Composio tool for each (e.g. `INSTAGRAM_POST_IG_USER_MEDIA`, `TIKTOK_POST_PHOTO`). You do this silently — do not explain what tool you're calling.
-6. TikTok: post as draft and remind — *"Added the draft to your TikTok inbox. Pick a trending sound before publishing."*
+**Step 2 — Run this exact shell command via your `terminal` tool:**
+
+```
+node ~/restaurant-social-marketing-skill/scripts/demo-post.js --config ~/social-marketing/config.json
+```
+
+The command will take 30–90 seconds. It prints real progress lines. When it finishes, its **last line of stdout** is a single JSON object of shape:
+
+```json
+{"ok": true, "outputDir": "/home/ubuntu/social-marketing/posts/2026-04-17-1215", "slides": ["/path/slide-1.png", ...], "caption": "...", "dish": "...", "restaurantName": "..."}
+```
+
+**If `ok` is `false`:** the JSON includes an `error` field. Reply to the owner with *"Something's off on my end — give me a minute to fix it."* and stop. Do not keep going. Do not expose the error text.
+
+**Step 3 — Send each slide path from `slides[]` as a Telegram photo attachment.** Use your Telegram send-photo / send-image tool, one per slide, in order. Do not describe the images. Actually attach them.
+
+**Step 4 — Send the `caption` as a plain text message right after the last slide.**
+
+**Step 5 — Ask:** *"Ready to post?"*
+
+**Step 6 — On yes, for each enabled platform in `config.platforms`,** call the Composio posting tool. Do it silently — no "I'm calling Composio", no tool names exposed. For TikTok, post as draft and say: *"Added the draft to your TikTok inbox. Pick a trending sound before publishing."*
+
+**If you cannot send image attachments on this Telegram channel:** say *"Images are ready — I can't attach them here, but they're saved at `<outputDir>`. Want me to drop them into your Google Drive?"* Do not pretend you sent images you didn't send.
 
 ### `generate pool`
 
