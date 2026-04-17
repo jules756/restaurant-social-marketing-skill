@@ -12,6 +12,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Composio } = require('@composio/core');
 
 let _client = null;
@@ -56,49 +57,56 @@ async function executeTool(config, toolSlug, args = {}) {
  * we fall back to the REST presigned-upload pattern.
  */
 async function uploadFile(config, toolkitSlug, toolSlug, filePath, mimetype = 'image/png') {
-  // Composio SDK v0.1.x expects `{ path }` (absolute filesystem path) or `{ blob }`.
-  // Try several SDK shapes, then fall back to REST presigned upload.
   const composio = getClient(config);
   const absPath = path.resolve(filePath);
+  const fileBuffer = fs.readFileSync(absPath);
+  const filename = path.basename(absPath);
+  const md5 = crypto.createHash('md5').update(fileBuffer).digest('hex');
 
+  // SDK path — try positional string + object shapes.
   if (typeof composio.files?.upload === 'function') {
     const attempts = [
-      { path: absPath, toolkitSlug, toolSlug, mimetype },
-      { path: absPath, toolkit_slug: toolkitSlug, tool_slug: toolSlug, mimetype },
-      { path: absPath }
+      [absPath],                                           // positional string
+      [{ path: absPath }],                                  // object with path
+      [{ path: absPath, toolkitSlug, toolSlug, mimetype }],
+      [{ file: absPath }],
+      [{ filePath: absPath }]
     ];
     let lastErr;
     for (const args of attempts) {
       try {
-        const result = await composio.files.upload(args);
-        // Return whatever the SDK considers the "key" — varies by version
-        return result?.key || result?.file_key || result?.data?.key || result;
-      } catch (e) {
-        lastErr = e;
-      }
+        const result = await composio.files.upload(...args);
+        return result?.key || result?.file_key || result?.data?.key || result?.id || result;
+      } catch (e) { lastErr = e; }
     }
     console.warn(`SDK files.upload failed, falling back to REST: ${lastErr?.message}`);
   }
 
-  // REST fallback (presigned URL pattern)
-  const filename = path.basename(absPath);
-  const fileBuffer = fs.readFileSync(absPath);
+  // REST fallback. v3 presign now requires md5 of the payload.
   const apiKey = config.composio.apiKey;
   const presignRes = await fetch('https://backend.composio.dev/api/v3/files/upload/request', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ toolkit_slug: toolkitSlug, tool_slug: toolSlug, filename, mimetype })
+    body: JSON.stringify({
+      toolkit_slug: toolkitSlug,
+      tool_slug: toolSlug,
+      filename,
+      mimetype,
+      md5
+    })
   });
   if (!presignRes.ok) throw new Error(`uploadFile presign failed (${presignRes.status}): ${await presignRes.text()}`);
   const presignData = await presignRes.json();
   if (presignData.error) throw new Error(`uploadFile presign error: ${JSON.stringify(presignData.error)}`);
-  const putRes = await fetch(presignData.new_presigned_url, {
+  const uploadUrl = presignData.new_presigned_url || presignData.presigned_url || presignData.url;
+  if (!uploadUrl) throw new Error(`uploadFile: presign returned no URL: ${JSON.stringify(presignData).slice(0, 200)}`);
+  const putRes = await fetch(uploadUrl, {
     method: 'PUT',
     headers: { 'Content-Type': mimetype },
     body: fileBuffer
   });
-  if (!putRes.ok) throw new Error(`uploadFile PUT failed (${putRes.status})`);
-  return presignData.key;
+  if (!putRes.ok) throw new Error(`uploadFile PUT failed (${putRes.status}): ${await putRes.text()}`);
+  return presignData.key || presignData.file_key || presignData.id;
 }
 
 const PLATFORMS = {
