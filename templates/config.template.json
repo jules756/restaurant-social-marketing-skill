@@ -27,7 +27,7 @@
   },
   "imageGen": {
     "_comment": "Image generation only. Chat/captions/research run on Hermes's own model. Model is fetched through Composio's OpenRouter credential. Update when better models ship.",
-    "model": "google/gemini-2.5-flash-image-preview"
+    "model": "google/gemini-3.1-flash-image-preview"
   },
   "timezone": "Europe/Stockholm",
   "country": "SE",
