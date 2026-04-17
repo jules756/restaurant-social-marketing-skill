@@ -48,6 +48,19 @@ cp -r "$REPO_DIR/skills/"* "$SKILLS_DIR/"
 cp -r "$REPO_DIR/adapted-skills/"* "$SKILLS_DIR/"
 echo "  ✅ skills copied"
 
+# 1b. Install SOUL.md — Hermes's global persona file. Overrides the default
+# general-assistant behavior so every message routes through the restaurant-
+# marketing skill instead of producing meta-commentary.
+mkdir -p "$HERMES_DIR"
+if [[ -f "$HERMES_DIR/SOUL.md" ]]; then
+  if ! diff -q "$REPO_DIR/templates/SOUL.md" "$HERMES_DIR/SOUL.md" > /dev/null 2>&1; then
+    echo "  ℹ  Existing $HERMES_DIR/SOUL.md differs from template — backing up to SOUL.md.bak"
+    cp "$HERMES_DIR/SOUL.md" "$HERMES_DIR/SOUL.md.bak"
+  fi
+fi
+cp "$REPO_DIR/templates/SOUL.md" "$HERMES_DIR/SOUL.md"
+echo "  ✅ SOUL.md installed → $HERMES_DIR/SOUL.md"
+
 # 2. Ensure @composio/core is installed in the repo (local install, no sudo).
 #    Avoids /usr/local permission headaches from npm -g on macOS.
 if [[ ! -d "$REPO_DIR/node_modules/@composio/core" ]]; then

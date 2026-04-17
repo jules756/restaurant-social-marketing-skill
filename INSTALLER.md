@@ -63,6 +63,16 @@ cd ~/restaurant-social-marketing-skill && node -e "console.log(require('@composi
 
 Should print a function, not throw.
 
+### Step 3b — Install SOUL.md (Hermes persona override)
+
+Without this, Hermes defaults to a general-assistant voice and will do meta-commentary on Telegram ("let me run the validator", "want me to debug?") instead of acting as the restaurant's marketing partner.
+
+```bash
+cp ~/restaurant-social-marketing-skill/templates/SOUL.md ~/.hermes/SOUL.md
+```
+
+`install.sh` does this automatically — included here in case of manual install.
+
 ### Step 4 — Scaffold the client working directory
 
 ```bash
