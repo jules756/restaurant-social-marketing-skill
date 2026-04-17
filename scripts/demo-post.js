@@ -38,8 +38,12 @@ function fail(msg) {
 
 try {
   const config = loadConfig(configPath);
-  const profilePath = config.paths?.restaurantProfile ||
-    path.join(path.dirname(path.resolve(configPath)), 'restaurant-profile.json');
+  const configDir = path.dirname(path.resolve(configPath));
+  // Resolve profile path relative to the config file's directory, not cwd.
+  const rawProfilePath = config.paths?.restaurantProfile;
+  const profilePath = rawProfilePath
+    ? (path.isAbsolute(rawProfilePath) ? rawProfilePath : path.resolve(configDir, '..', rawProfilePath))
+    : path.join(configDir, 'restaurant-profile.json');
   if (!fs.existsSync(profilePath)) fail(`Restaurant profile not found: ${profilePath}. Owner has not completed onboarding.`);
   const profile = JSON.parse(fs.readFileSync(profilePath, 'utf-8'));
 
@@ -51,7 +55,11 @@ try {
   const cuisine = profile.cuisine || 'restaurant';
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 16).replace('T', '-');
-  const outputDir = path.resolve(config.paths?.posts || 'social-marketing/posts/', timestamp);
+  const postsRoot = config.paths?.posts || 'social-marketing/posts/';
+  const postsAbs = path.isAbsolute(postsRoot)
+    ? postsRoot
+    : path.resolve(configDir, '..', postsRoot);
+  const outputDir = path.resolve(postsAbs, timestamp);
   fs.mkdirSync(outputDir, { recursive: true });
 
   const basePrompt = `iPhone photo of ${visual}, ${vibe} atmosphere, ${cuisine} restaurant, warm ambient lighting, authentic and appetizing, shot on iPhone, natural depth of field, no text no watermarks no logos`;
