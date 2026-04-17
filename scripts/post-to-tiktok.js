@@ -26,13 +26,18 @@ const getArg = (name) => {
   const i = args.indexOf(`--${name}`);
   return i !== -1 ? args[i + 1] : null;
 };
+const hasFlag = (name) => args.includes(`--${name}`);
 
 const configPath = getArg('config') || `${process.env.HOME}/social-marketing/config.json`;
 const dir = getArg('dir');
+const dryRun = hasFlag('dry-run');
 
 function fail(msg) {
   console.log(JSON.stringify({ ok: false, platform: 'tiktok', error: msg }));
   process.exit(1);
+}
+function dryLog(label, obj) {
+  console.log(`[DRY-RUN] ${label}: ${JSON.stringify(obj)}`);
 }
 
 if (!dir) fail('--dir is required');
@@ -56,6 +61,19 @@ if (!dir) fail('--dir is required');
     const caption = fs.existsSync(captionPath) ? fs.readFileSync(captionPath, 'utf-8').trim() : '';
 
     const tt = PLATFORMS.tiktok;
+
+    if (dryRun) {
+      slides.forEach((s) => dryLog('upload_slide', path.basename(s)));
+      dryLog('post_as_draft', { tool: tt.postPhotoTool, privacy: 'SELF_ONLY', slide_count: slides.length, caption_preview: caption.slice(0, 80) });
+      console.log(JSON.stringify({
+        ok: true,
+        platform: 'tiktok',
+        mode: 'draft',
+        dryRun: true,
+        slidesPosted: slides.length
+      }));
+      return;
+    }
 
     // Upload each slide
     const fileKeys = [];
