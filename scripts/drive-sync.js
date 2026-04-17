@@ -23,11 +23,28 @@ const getArg = (name) => {
   const i = args.indexOf(`--${name}`);
   return i !== -1 ? args[i + 1] : null;
 };
+const hasFlag = (name) => args.includes(`--${name}`);
 
 const configPath = getArg('config');
+const noRecurse = hasFlag('no-recurse');
 if (!configPath) {
-  console.error('Usage: node drive-sync.js --config <config.json>');
+  console.error('Usage: node drive-sync.js --config <config.json> [--no-recurse]');
   process.exit(1);
+}
+
+/**
+ * Map a Drive subfolder name to one of our categories. Case-insensitive,
+ * tolerant of misspellings ("Menue" → menu, "Diches" → dish). Photos in
+ * unmapped folders get category=null and go through vision classification.
+ */
+function mapSubfolderToCategory(folderName) {
+  const n = (folderName || '').toLowerCase().trim();
+  if (/^(food|foods|dish|diches|dishes|plate|plates|meal|meals)$/.test(n)) return 'dish';
+  if (/^(place|places|ambiance|ambience|interior|dining|dining[-_ ]?room|restaurant|venue|atmosphere|atmosph|vibe)$/.test(n)) return 'ambiance';
+  if (/^(kitchen|cuisine|chef|chefs|back[-_ ]?of[-_ ]?house|prep)$/.test(n)) return 'kitchen';
+  if (/^(exterior|outside|facade|street|entrance|front|outdoor)$/.test(n)) return 'exterior';
+  if (/^(menu|menue|menus|card|carte)$/.test(n)) return 'menu';
+  return null; // vision will classify
 }
 
 const config = loadConfig(configPath);
@@ -126,23 +143,41 @@ async function resolveFolderId() {
   return id;
 }
 
+async function collectImagesRecursive(folderId, folderName, depth = 0) {
+  const entries = await listFolder(folderId);
+  const collected = [];
+  const images = entries.filter(isImage);
+  const folders = entries.filter(isFolder);
+  // Tag each image with the subfolder it came from → drives category mapping.
+  const category = mapSubfolderToCategory(folderName);
+  for (const img of images) {
+    collected.push({ ...img, sourceFolder: folderName, sourceCategory: category });
+  }
+  if (noRecurse) {
+    return { collected, subfolders: folders };
+  }
+  for (const sub of folders) {
+    const subResult = await collectImagesRecursive(sub.id, sub.name, depth + 1);
+    collected.push(...subResult.collected);
+  }
+  return { collected, subfolders: folders };
+}
+
 (async () => {
   const folderId = await resolveFolderId();
   const idx = loadIndex(folderId);
   console.log(`Syncing Drive folder ${drive.folderName} (${folderId}) → ${cacheDir}`);
-  const entries = await listFolder(folderId);
-  const files = entries.filter(isImage);
-  const subfolders = entries.filter(isFolder);
-  console.log(`Found ${files.length} image(s), ${subfolders.length} subfolder(s) in folder.`);
+  const { collected: files, subfolders } = await collectImagesRecursive(folderId, drive.folderName);
+  if (subfolders.length > 0) {
+    console.log(`Discovered subfolders:`);
+    subfolders.forEach((s) => {
+      const cat = mapSubfolderToCategory(s.name);
+      console.log(`  - ${s.name} → category=${cat || 'unsorted (vision)'}`);
+    });
+  }
+  console.log(`Found ${files.length} image(s) across all folders.`);
 
-  // If root is empty of images but has subfolders, tell the user where to
-  // put photos (prevents silent "0 found" confusion).
-  if (files.length === 0 && subfolders.length > 0) {
-    console.log('');
-    console.log(`  No images at root of "${drive.folderName}". Subfolders present:`);
-    subfolders.forEach((s) => console.log(`    - ${s.name || s.id}`));
-    console.log(`  Tip: drop images directly into "${drive.folderName}" root, or pass --recurse to also scan subfolders (not yet implemented).`);
-  } else if (files.length === 0 && subfolders.length === 0) {
+  if (files.length === 0 && subfolders.length === 0) {
     console.log('');
     console.log(`  Folder "${drive.folderName}" (${folderId}) is empty.`);
     console.log('  Check: are you adding photos to the same Google account Composio is connected to?');
@@ -156,7 +191,11 @@ async function resolveFolderId() {
     const id = file.id;
     const name = file.name || `${id}.jpg`;
     const existing = idx.files[id];
-    const target = path.join(cacheDir, 'unsorted', name);
+    // Drop into the subfolder-mapped category dir when we know it; else unsorted.
+    const cat = file.sourceCategory || 'unsorted';
+    const categoryDir = { dish: 'dishes', ambiance: 'ambiance', kitchen: 'kitchen', exterior: 'exterior', menu: 'menu', unsorted: 'unsorted' }[cat];
+    fs.mkdirSync(path.join(cacheDir, categoryDir), { recursive: true });
+    const target = path.join(cacheDir, categoryDir, name);
 
     if (existing && fs.existsSync(existing.localPath) && fs.statSync(existing.localPath).size > 0) {
       skipped++;
@@ -170,11 +209,12 @@ async function resolveFolderId() {
         name,
         size: buf.length,
         localPath: target,
-        category: null, // filled by drive-inventory.js
+        category: file.sourceCategory || null, // pre-categorized if subfolder mapped; null → vision
+        sourceFolder: file.sourceFolder || null,
         syncedAt: new Date().toISOString()
       };
       added++;
-      console.log(`  ⬇  ${name}`);
+      console.log(`  ⬇  ${cat}/${name}  (from "${file.sourceFolder}")`);
     } catch (e) {
       failed++;
       console.error(`  ❌ ${name}: ${e.message}`);
