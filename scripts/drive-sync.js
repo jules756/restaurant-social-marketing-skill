@@ -54,9 +54,6 @@ const cacheDir = path.isAbsolute(rawCachePath)
   : path.resolve(configDir, rawCachePath.replace(/^social-marketing\//, ''));
 const indexPath = path.join(cacheDir, 'drive-index.json');
 fs.mkdirSync(cacheDir, { recursive: true });
-for (const sub of ['dishes', 'ambiance', 'kitchen', 'exterior', 'unsorted']) {
-  fs.mkdirSync(path.join(cacheDir, sub), { recursive: true });
-}
 
 function loadIndex(folderId) {
   if (!fs.existsSync(indexPath)) {
@@ -93,9 +90,20 @@ async function downloadFile(file) {
   const result = await executeTool(config, PLATFORMS.googledrive.downloadFileTool, {
     file_id: file.id
   });
-  const b64 = result.data?.content || result.content;
-  if (!b64) throw new Error(`Download for ${file.name}: no content returned`);
-  return Buffer.from(b64, 'base64');
+  const data = result.data || result;
+  // Composio v0.1.x writes the file to disk and returns its path. Try every
+  // field shape we've seen, then fall back to inline base64 if present.
+  const localPath =
+    data.file_path || data.filePath || data.local_path || data.localPath ||
+    data.path || data.file;
+  if (localPath && fs.existsSync(localPath)) {
+    return fs.readFileSync(localPath);
+  }
+  const b64 = data.content || data.file_content;
+  if (b64) return Buffer.from(b64, 'base64');
+  throw new Error(
+    `Download for ${file.name}: no content or file path returned. Response keys: ${Object.keys(data).join(',')}`
+  );
 }
 
 /**
@@ -176,16 +184,20 @@ async function collectImagesRecursive(folderId, folderName, depth = 0) {
   let skipped = 0;
   let failed = 0;
 
-  // All images land in unsorted/ initially. drive-inventory.js classifies
-  // each via vision, then moves files to the matched category subdir.
-  const unsortedDir = path.join(cacheDir, 'unsorted');
-  fs.mkdirSync(unsortedDir, { recursive: true });
-
+  // Mirror the Drive folder structure locally. A photo from
+  // akira-agent_src/Food/bolognese.jpg lands at photos/Food/bolognese.jpg.
+  // Whatever the user organized in Drive is what shows up locally. The AI
+  // reads the local structure and decides what to do with it.
   for (const file of files) {
     const id = file.id;
     const name = file.name || `${id}.jpg`;
     const existing = idx.files[id];
-    const target = path.join(unsortedDir, name);
+    const subdir = file.sourceFolder && file.sourceFolder !== drive.folderName
+      ? file.sourceFolder
+      : '';
+    const targetDir = subdir ? path.join(cacheDir, subdir) : cacheDir;
+    fs.mkdirSync(targetDir, { recursive: true });
+    const target = path.join(targetDir, name);
 
     if (existing && fs.existsSync(existing.localPath) && fs.statSync(existing.localPath).size > 0) {
       skipped++;
@@ -199,12 +211,11 @@ async function collectImagesRecursive(folderId, folderName, depth = 0) {
         name,
         size: buf.length,
         localPath: target,
-        category: null,          // vision will fill
-        sourceFolder: file.sourceFolder || null,  // hint for vision
+        sourceFolder: file.sourceFolder || null,
         syncedAt: new Date().toISOString()
       };
       added++;
-      console.log(`  ⬇  ${name}  (from Drive folder "${file.sourceFolder}")`);
+      console.log(`  ⬇  ${subdir ? subdir + '/' : ''}${name}`);
     } catch (e) {
       failed++;
       console.error(`  ❌ ${name}: ${e.message}`);
