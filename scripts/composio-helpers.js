@@ -63,23 +63,13 @@ async function uploadFile(config, toolkitSlug, toolSlug, filePath, mimetype = 'i
   const filename = path.basename(absPath);
   const md5 = crypto.createHash('md5').update(fileBuffer).digest('hex');
 
-  // SDK path — try positional string + object shapes.
-  if (typeof composio.files?.upload === 'function') {
-    const attempts = [
-      [absPath],                                           // positional string
-      [{ path: absPath }],                                  // object with path
-      [{ path: absPath, toolkitSlug, toolSlug, mimetype }],
-      [{ file: absPath }],
-      [{ filePath: absPath }]
-    ];
-    let lastErr;
-    for (const args of attempts) {
-      try {
-        const result = await composio.files.upload(...args);
-        return result?.key || result?.file_key || result?.data?.key || result?.id || result;
-      } catch (e) { lastErr = e; }
-    }
-    console.warn(`SDK files.upload failed, falling back to REST: ${lastErr?.message}`);
+  // SDK path — the v0.1.55 SDK's files.upload signature keeps rejecting
+  // every shape we try. Skip it and go straight to the REST fallback
+  // until the SDK is upgraded (latest is 0.6.10). One warning per run,
+  // not per file.
+  if (typeof composio.files?.upload === 'function' && !uploadFile._warnedSdk) {
+    uploadFile._warnedSdk = true;
+    // Uncomment to verbose: console.warn('Skipping SDK files.upload; using REST fallback.');
   }
 
   // REST fallback. v3 presign now requires md5 of the payload.
