@@ -167,15 +167,36 @@ async function generateImage(promptText, referenceImagePath, outPath) {
     });
   }
 
-  // Route through Composio SDK. The org's OpenRouter credential is used
-  // server-side. No API key on the VM.
-  const result = await executeTool(config, 'OPENROUTER_CHAT_COMPLETIONS', {
-    model,
-    messages: [{ role: 'user', content: userContent }],
-    modalities: ['image', 'text']
-  });
-
-  const data = result.data || result.body || result;
+  // Prefer direct OpenRouter if OPENROUTER_API_KEY is set on the VM (demo
+  // path — fastest, and works until the Composio org has an OpenRouter
+  // toolkit attached). Fall back to Composio proxy otherwise.
+  const directKey = process.env.OPENROUTER_API_KEY;
+  let data;
+  if (directKey) {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${directKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://akira-agent.com',
+        'X-Title': 'restaurant-social-marketing'
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: userContent }],
+        modalities: ['image', 'text']
+      })
+    });
+    data = await res.json();
+    if (!res.ok && !data.error) data.error = { message: `HTTP ${res.status}` };
+  } else {
+    const result = await executeTool(config, 'OPENROUTER_CHAT_COMPLETIONS', {
+      model,
+      messages: [{ role: 'user', content: userContent }],
+      modalities: ['image', 'text']
+    });
+    data = result.data || result.body || result;
+  }
   if (data.error) {
     throw new Error(data.error?.message || `chat.completions: ${JSON.stringify(data).slice(0, 300)}`);
   }
