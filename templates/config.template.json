@@ -5,14 +5,21 @@
     "chatId": ""
   },
   "composio": {
-    "_comment": "One Composio Organization per restaurant client. The org-scoped API key + userId are the only credentials this VM needs. All platform connections (Instagram, TikTok, Facebook, Drive) and the OpenRouter credential live inside the org, scoped to the userId. No third-party API keys on the VM.",
+    "_comment": "One Composio Organization per restaurant client. The org-scoped API key + userId are the only credentials this VM needs. IMPORTANT: userId must be the ENTITY under which OAuth connections were created in the Composio dashboard — NOT your operator account ID. If you connected via the dashboard's Test button, it will look like 'pg-test-<something>'.",
     "apiKey": "",
     "userId": ""
   },
   "platforms": {
-    "instagram": { "enabled": false },
+    "instagram": {
+      "_comment": "igUserId is the Instagram Business Account ID — a 17-digit number starting with 17841. Find it in Meta Business Suite → Settings → Instagram accounts, or via Graph API Explorer: me/accounts?fields=instagram_business_account. Required by Instagram's Graph API; not optional.",
+      "enabled": false,
+      "igUserId": ""
+    },
     "tiktok":    { "enabled": false },
-    "facebook":  { "enabled": false }
+    "facebook":  {
+      "enabled": false,
+      "pageId": ""
+    }
   },
   "googleDrive": {
     "enabled": false,
@@ -26,8 +33,13 @@
     "utmSource": "social"
   },
   "imageGen": {
-    "_comment": "Image generation only. Chat/captions/research run on Hermes's own model. Model is fetched through Composio's OpenRouter credential. Update when better models ship.",
-    "model": "google/gemini-3.1-flash-image-preview"
+    "_comment": "Image generation model. Verify availability at https://openrouter.ai/models. Defaults to the current best Gemini image model — swap as newer ones ship. openrouterApiKey is the direct fallback used by generate-slides.js and drive-inventory.js when Composio's OpenRouter proxy isn't set up.",
+    "model": "google/gemini-3.1-flash-image-preview",
+    "openrouterApiKey": ""
+  },
+  "imageHost": {
+    "_comment": "Only needed if a posting script ever needs a public-URL image host. Get a free key at https://api.imgbb.com (30 sec). Currently unused for Instagram carousel posts (image_file path handles hosting via Composio) — kept for future flows that need a public URL.",
+    "imgbbApiKey": ""
   },
   "timezone": "Europe/Stockholm",
   "country": "SE",

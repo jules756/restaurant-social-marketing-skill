@@ -1,8 +1,30 @@
 # Restaurant Social Media Marketing — v3
 
-A set of Hermes Agent skills that turn a restaurant's social media into an autonomous marketing partner. The goal is always **more bookings**, not more views.
+Hermes Agent skills + Node scripts that turn a restaurant's social media into an autonomous marketing partner. Goal is **more bookings**, not more views.
 
-**Status:** three custom skills + three adapted external skills + shared scripts, backed by the Composio SDK.
+## Status
+
+**Working end-to-end** (verified on Rodolfino, 2026-04-17):
+- Slide generation via OpenRouter Gemini image models (`generate-slides.js`).
+- Text overlays via node-canvas (`add-text-overlay.js`).
+- Live Instagram carousel publish via Composio SDK (`post-to-instagram.js`) — 6-slide carousels go live on the feed, `ig_user_id` resolved from config, `image_file` parameter handles Composio-side hosting.
+- Telegram notification to the owner with post permalink + "convert to Reel for music" hint after publish.
+
+**Working but untested against live platform APIs:**
+- TikTok draft post (`post-to-tiktok.js`).
+- Facebook multi-photo carousel (`post-to-facebook.js`).
+
+**Not wired up yet (next phase):**
+- Telegram-triggered `generate post` — Hermes orchestration layer still hallucinates instead of invoking scripts. All pipeline commands today are run manually from the VM terminal.
+- Drive img2img (bot uses real food photos as references). Scripts exist (`drive-sync.js`, `drive-inventory.js`); needs Composio Drive OAuth + first live sync.
+- Cron jobs (daily analytics at 10:00, weekly research Mondays at 09:00).
+- Platform posting scripts for TikTok + Facebook need live verification.
+
+## Known platform constraints
+
+- **No trending music on carousels via API.** Instagram's Graph API doesn't expose the consumer music library to business accounts. After publish, `post-to-instagram.js` pings the owner on Telegram: *"Want music? Open the post → ⋯ → Share as Reel."* Instagram's mobile app handles the conversion + music picker natively.
+- **Scheduled posts via API don't reliably appear in Meta Business Suite's Planner.** Composio's `INSTAGRAM_POST_IG_USER_MEDIA` may silently drop the `scheduled_publish_time` parameter. Default mode is live publish; if scheduling is needed, use the mobile app's native scheduler.
+- **Composio `uploadFile` presign uses signed R2 URLs that Instagram rejects.** We bypass by passing `image_file: <absolute path>` directly to `INSTAGRAM_POST_IG_USER_MEDIA` — Composio handles the upload + URL on their backend.
 
 ---
 
@@ -85,14 +107,22 @@ adapted-skills/                   ← external skills, API calls stripped
 
 scripts/                          ← Node.js scripts (called by skills at runtime)
 ├── setup.js                      ← Phase 0 validation
-├── drive-sync.js
-├── drive-inventory.js
-├── generate-slides.js
-├── add-text-overlay.js
-├── daily-report.js
-├── weekly-research.js
-├── competitor-research.js
-└── aggregator.js
+├── composio-helpers.js           ← SDK wrappers (executeTool, uploadFile)
+├── generate-slides.js            ← OpenRouter image gen (txt2img + img2img)
+├── add-text-overlay.js           ← node-canvas overlays on generated slides
+├── drive-sync.js                 ← pull reference photos from Drive via Composio
+├── drive-inventory.js            ← vision classification → photo-inventory.json
+├── post-to-instagram.js          ← carousel publish + Telegram notify (LIVE)
+├── post-to-tiktok.js             ← TikTok draft (untested live)
+├── post-to-facebook.js           ← Facebook multi-photo (untested live)
+├── daily-report.js               ← Module A analytics cron
+├── weekly-research.js            ← Module B trend research (skeleton)
+├── competitor-research.js        ← Module D competitor scan (skeleton)
+└── aggregator.js                 ← Cross-client pattern learning (network-level)
+
+tests/                            ← Offline test harness
+├── test-posting.js               ← 32 assertions; uses --dry-run mode
+└── fixtures/                     ← Test config + fake slides
 
 templates/
 └── config.template.json          ← blank config for new deployments
@@ -197,8 +227,44 @@ git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/re
 
 ---
 
+## Live Posting Verification (Current Working Path)
+
+Minimum config.json fields for a live Instagram post:
+
+```json
+{
+  "telegram": { "botToken": "<bot token>", "chatId": "<owner chat id>" },
+  "composio": {
+    "apiKey": "ak_<org-scoped key>",
+    "userId": "pg-test-<or your entity id>"
+  },
+  "platforms": {
+    "instagram": {
+      "enabled": true,
+      "igUserId": "17841<17-digit IG Business Account ID>"
+    }
+  },
+  "imageGen": { "model": "google/gemini-3.1-flash-image-preview" },
+  "imageHost": { "imgbbApiKey": "<imgbb key — currently unused since image_file path>" }
+}
+```
+
+Gotchas from the live bring-up:
+- `composio.userId` must match the **entity** under which OAuth was connected (often `pg-test-…` if you connected via Composio's dashboard "Test" button) — not your operator account ID.
+- `igUserId` is the **Instagram Business Account ID** (17-digit starting `17841…`), not Composio's user. Find it in Meta Business Suite → Settings → Instagram accounts, or via Graph API Explorer `me/accounts?fields=instagram_business_account`.
+- `imgbbApiKey` is configured but not used in the current Instagram flow (we use `image_file` → Composio handles hosting). Keep it for future flows or remove.
+- Run `npm install` in the repo before first invocation — `@composio/core` is a local dep.
+
+End-to-end test (VM terminal):
+
+```bash
+cd ~/restaurant-social-marketing-skill && node scripts/post-to-instagram.js --config ~/social-marketing/config.json --dir ~/social-marketing/posts/<post-dir>
+```
+
+Expected: `{"ok":true,"platform":"instagram","mode":"live","mediaId":"...","permalink":"https://www.instagram.com/p/..."}` + a Telegram message to the owner.
+
 ## References
 
 - **OpenRouter** — https://openrouter.ai/docs
-- **Composio** — https://docs.composio.dev
+- **Composio** — https://docs.composio.dev (Instagram toolkit: https://docs.composio.dev/toolkits/instagram)
 - **Upstream external skills** — links in each adapted skill's SKILL.md.
