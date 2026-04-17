@@ -167,10 +167,11 @@ async function generateImage(promptText, referenceImagePath, outPath) {
     });
   }
 
-  // Prefer direct OpenRouter if OPENROUTER_API_KEY is set on the VM (demo
-  // path — fastest, and works until the Composio org has an OpenRouter
-  // toolkit attached). Fall back to Composio proxy otherwise.
-  const directKey = process.env.OPENROUTER_API_KEY;
+  // Prefer direct OpenRouter. Key can come from either the env or
+  // config.imageGen.openrouterApiKey (config wins — more reliable than
+  // env when scripts are invoked from sub-shells or Hermes terminal tools).
+  // Fall back to Composio proxy if neither is set.
+  const directKey = config.imageGen?.openrouterApiKey || process.env.OPENROUTER_API_KEY;
   let data;
   if (directKey) {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
