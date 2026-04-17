@@ -56,26 +56,40 @@ async function executeTool(config, toolSlug, args = {}) {
  * we fall back to the REST presigned-upload pattern.
  */
 async function uploadFile(config, toolkitSlug, toolSlug, filePath, mimetype = 'image/png') {
-  // Try SDK upload first; fall back to REST if not exposed
+  // Composio SDK v0.1.x expects `{ path }` (absolute filesystem path) or `{ blob }`.
+  // Try several SDK shapes, then fall back to REST presigned upload.
   const composio = getClient(config);
+  const absPath = path.resolve(filePath);
+
   if (typeof composio.files?.upload === 'function') {
-    return composio.files.upload({
-      toolkitSlug,
-      toolSlug,
-      filePath,
-      mimetype
-    });
+    const attempts = [
+      { path: absPath, toolkitSlug, toolSlug, mimetype },
+      { path: absPath, toolkit_slug: toolkitSlug, tool_slug: toolSlug, mimetype },
+      { path: absPath }
+    ];
+    let lastErr;
+    for (const args of attempts) {
+      try {
+        const result = await composio.files.upload(args);
+        // Return whatever the SDK considers the "key" — varies by version
+        return result?.key || result?.file_key || result?.data?.key || result;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    console.warn(`SDK files.upload failed, falling back to REST: ${lastErr?.message}`);
   }
+
   // REST fallback (presigned URL pattern)
-  const filename = path.basename(filePath);
-  const fileBuffer = fs.readFileSync(filePath);
+  const filename = path.basename(absPath);
+  const fileBuffer = fs.readFileSync(absPath);
   const apiKey = config.composio.apiKey;
   const presignRes = await fetch('https://backend.composio.dev/api/v3/files/upload/request', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({ toolkit_slug: toolkitSlug, tool_slug: toolSlug, filename, mimetype })
   });
-  if (!presignRes.ok) throw new Error(`uploadFile presign failed (${presignRes.status})`);
+  if (!presignRes.ok) throw new Error(`uploadFile presign failed (${presignRes.status}): ${await presignRes.text()}`);
   const presignData = await presignRes.json();
   if (presignData.error) throw new Error(`uploadFile presign error: ${JSON.stringify(presignData.error)}`);
   const putRes = await fetch(presignData.new_presigned_url, {
