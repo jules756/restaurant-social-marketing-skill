@@ -56,12 +56,55 @@ async function executeTool(config, toolSlug, args = {}) {
  * Upload a file via Composio. The SDK may expose this natively; if not,
  * we fall back to the REST presigned-upload pattern.
  */
+/**
+ * Upload an image to a public host and return its URL.
+ *
+ * Instagram's Graph API requires publicly fetchable HTTPS URLs with no
+ * query strings (rejects AWS/R2 signed URLs). Composio's file upload
+ * only produces signed URLs. So for any tool that feeds downstream to
+ * Instagram, we need a real public host.
+ *
+ * Priority order:
+ *   1. config.imageHost.provider === "imgbb" + imgbbApiKey → use imgbb
+ *   2. Composio file upload (returns signed URL — works for tools that
+ *      accept signed URLs, fails for Instagram).
+ *
+ * imgbb gives free image hosting, clean permanent URLs, no query string.
+ * Get a key at https://api.imgbb.com (30s, free).
+ */
+async function uploadToImgbb(apiKey, fileBuffer, filename) {
+  const form = new FormData();
+  form.append('key', apiKey);
+  form.append('image', new Blob([fileBuffer], { type: 'image/png' }), filename);
+  const res = await fetch('https://api.imgbb.com/1/upload', {
+    method: 'POST',
+    body: form
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(`imgbb upload failed: ${data?.error?.message || res.status}`);
+  }
+  return {
+    key: data.data.id,
+    url: data.data.url, // clean HTTPS URL, no query string
+    displayUrl: data.data.display_url,
+    deleteUrl: data.data.delete_url,
+    raw: data
+  };
+}
+
 async function uploadFile(config, toolkitSlug, toolSlug, filePath, mimetype = 'image/png') {
   const composio = getClient(config);
   const absPath = path.resolve(filePath);
   const fileBuffer = fs.readFileSync(absPath);
   const filename = path.basename(absPath);
   const md5 = crypto.createHash('md5').update(fileBuffer).digest('hex');
+
+  // Path 1: imgbb (preferred for Instagram-bound uploads — clean URLs).
+  const imgbbKey = config.imageHost?.imgbbApiKey || process.env.IMGBB_API_KEY;
+  if (imgbbKey) {
+    return uploadToImgbb(imgbbKey, fileBuffer, filename);
+  }
 
   // SDK path — the v0.1.55 SDK's files.upload signature keeps rejecting
   // every shape we try. Skip it and go straight to the REST fallback
