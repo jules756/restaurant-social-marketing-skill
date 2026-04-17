@@ -2,24 +2,23 @@
 /**
  * Phase 0 — Installer setup validator.
  *
- * Validates that every piece of technical plumbing is in place so the
- * restaurant owner never has to answer a technical question.
+ * End-to-end readiness check. Each enabled platform is probed via a real
+ * Composio tool call; Google Drive has its folder resolved or created and
+ * the id written back to config; image generation is verified with a
+ * minimal live call.
  *
  * Usage: node setup.js --config social-marketing/config.json
- *
- * Checks:
- *   1. Two-actor boundary — config.json has no restaurant-content keys.
- *   2. node v18+
- *   3. @composio/core SDK reachable.
- *   4. Telegram bot token + chat id work.
- *   5. Composio API key authenticates (org-scoped).
- *   6. Composio userId scoping works (list connected accounts).
- *   7. Image model reachable via Composio (OpenRouter tool).
- *   8. Per-platform enabled booleans.
- *   9. Google Drive enabled + folderName set.
  */
 
-const { executeTool, loadConfig, getClient } = require('./composio-helpers');
+const fs = require('fs');
+const path = require('path');
+const {
+  executeTool,
+  loadConfig,
+  getClient,
+  findOrCreateDriveFolder,
+  PLATFORMS
+} = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -39,6 +38,10 @@ const record = (label, ok, fix) => {
   console.log(`${ok ? '✅' : '❌'} ${label}${!ok && fix ? `\n   → ${fix}` : ''}`);
 };
 
+function saveConfig(config) {
+  fs.writeFileSync(path.resolve(configPath), JSON.stringify(config, null, 2) + '\n');
+}
+
 function checkTwoActorBoundary(config) {
   const forbidden = ['restaurant', 'menu', 'chef', 'history', 'recipes', 'vibe', 'signatureDishes'];
   const present = forbidden.filter((k) => k in config);
@@ -52,8 +55,7 @@ function checkTwoActorBoundary(config) {
 
 function checkNode() {
   const major = parseInt(process.versions.node.split('.')[0], 10);
-  record(`node ${process.version}`, major >= 18,
-    'Install Node.js v18+ (https://nodejs.org)');
+  record(`node ${process.version}`, major >= 18, 'Install Node.js v18+');
 }
 
 function checkComposioSdk() {
@@ -82,7 +84,7 @@ async function checkTelegram(config) {
     record(`Telegram bot @${data.result.username}`, true);
     if (!tg.chatId) {
       record('Telegram chat_id set', false,
-        'Set telegram.chatId — send a message to the bot then check https://api.telegram.org/bot<token>/getUpdates');
+        'Send a message to the bot, then curl https://api.telegram.org/bot<TOKEN>/getUpdates to read the chat_id');
     } else {
       record(`Telegram chat_id ${tg.chatId}`, true);
     }
@@ -98,80 +100,107 @@ async function checkComposioAuth(config) {
     return false;
   }
   try {
-    const composio = getClient(config);
-    // Verify the key by calling a read-only SDK method. getEntity returns
-    // the entity object if the key + userId are valid. If the SDK doesn't
-    // expose getEntity, we fall back to checking the key was accepted
-    // during client construction (no network call, but confirms format).
-    if (typeof composio.getEntity === 'function') {
-      await composio.getEntity(config.composio.userId || 'default');
-    } else if (typeof composio.connectedAccounts?.list === 'function') {
-      await composio.connectedAccounts.list({ userId: config.composio.userId || 'default' });
-    }
-    // If we get here without throwing, key is valid.
+    getClient(config);
     record('Composio API key valid', true);
     return true;
   } catch (e) {
-    const msg = e.message || '';
-    if (msg.includes('401') || msg.includes('403') || msg.includes('Unauthorized') || msg.includes('Invalid')) {
-      record('Composio API key valid', false,
-        `Key rejected. Verify at https://app.composio.dev → your org → API Keys`);
-      return false;
-    }
-    // Method not found or other non-auth error — key format is fine,
-    // real validation will happen on first tool call.
-    record('Composio API key valid', true);
-    return true;
+    record('Composio API key valid', false, `Key rejected: ${e.message}`);
+    return false;
   }
 }
 
-async function checkComposioUserId(config, authOk) {
-  if (!authOk) { record('composio.userId works', false, 'API key not valid — cannot verify'); return; }
+function checkUserId(config) {
   if (!config.composio?.userId) {
     record('composio.userId set', false,
       'Set composio.userId — per-restaurant entity identifier');
-    return;
+    return false;
   }
-  // We can't validate the userId without calling a real tool (and we don't
-  // know which tools the org has enabled). Just confirm it's set and
-  // non-empty. The first real tool call (generate post, drive sync, etc.)
-  // will surface a clear error if the userId is wrong.
   record(`composio.userId "${config.composio.userId}" set`, true);
+  return true;
 }
 
 async function checkImageModel(config, authOk) {
-  if (!authOk) { record('Image model reachable', false, 'API key not valid — cannot verify'); return; }
+  if (!authOk) { record('Image model reachable', false, 'API key not valid'); return; }
   const model = config.imageGen?.model;
   if (!model) {
     record('config.imageGen.model set', false,
       'Set imageGen.model (e.g. google/gemini-2.5-flash-image-preview)');
     return;
   }
-  // We can't list OpenRouter models through the SDK without a specific tool
-  // slug for that. Just record the config value and trust that the first
-  // generate-slides run will surface an error if the model is unavailable.
-  record(`Image model "${model}" configured`, true);
+  // Minimal live probe. A 1-token chat completion confirms the OpenRouter
+  // credential is wired up in the Composio org AND the model is available.
+  try {
+    const result = await executeTool(config, 'OPENROUTER_CHAT_COMPLETIONS', {
+      model,
+      messages: [{ role: 'user', content: 'ok' }],
+      max_tokens: 1
+    });
+    const body = result.data || result.body || result;
+    if (body.error) throw new Error(body.error.message || JSON.stringify(body.error));
+    record(`Image model "${model}" live`, true);
+  } catch (e) {
+    record(`Image model "${model}" live`, false,
+      `Test call failed: ${e.message}. Verify the OpenRouter credential is attached to this Composio org and the model is listed at https://openrouter.ai/models.`);
+  }
 }
 
-function checkPlatformEnabled(name, platformConfig) {
+async function checkPlatform(name, platformConfig, config, userOk) {
   if (!platformConfig?.enabled) {
     console.log(`⏭  ${name} disabled`);
     return;
   }
-  record(`${name} enabled — will use Composio SDK`, true);
+  if (!userOk) {
+    record(`${name} connected`, false, 'userId not set — cannot verify');
+    return;
+  }
+  const platform = PLATFORMS[name];
+  const probeTool = {
+    tiktok:    platform.userStatsTool,
+    instagram: platform.userInsightsTool,
+    facebook:  platform.pageInsightsTool
+  }[name];
+  if (!probeTool) {
+    record(`${name} connected`, false, `No probe tool known for ${name}`);
+    return;
+  }
+  try {
+    await executeTool(config, probeTool, {});
+    record(`${name} connected (live)`, true);
+  } catch (e) {
+    const msg = e.message || '';
+    record(`${name} connected (live)`, false,
+      `Probe ${probeTool} failed: ${msg.slice(0, 200)}. Verify the ${name} account is connected under userId "${config.composio.userId}" in the Composio dashboard.`);
+  }
 }
 
-function checkGoogleDriveEnabled(config) {
-  if (!config.googleDrive?.enabled) {
+async function checkGoogleDrive(config, userOk) {
+  const drive = config.googleDrive;
+  if (!drive?.enabled) {
     console.log('⏭  Google Drive disabled');
     return;
   }
-  if (!config.googleDrive.folderName) {
+  if (!userOk) {
+    record('Google Drive ready', false, 'userId not set — cannot verify');
+    return;
+  }
+  const folderName = drive.folderName;
+  if (!folderName) {
     record('googleDrive.folderName set', false,
       'Set googleDrive.folderName (default: "akira-agent_src")');
     return;
   }
-  record(`Google Drive enabled — folder "${config.googleDrive.folderName}" at first use`, true);
+  try {
+    const { id, created } = await findOrCreateDriveFolder(config, folderName);
+    drive.folderId = id;
+    saveConfig(config);
+    if (created) {
+      console.log(`   ✨ Created new Drive folder "${folderName}" (${id})`);
+    }
+    record(`Google Drive folder "${folderName}" → ${id}`, true);
+  } catch (e) {
+    record(`Google Drive folder "${folderName}" ready`, false,
+      `Failed to find/create folder: ${e.message.slice(0, 200)}. Verify the Drive connection is attached to userId "${config.composio.userId}" in Composio and has write access.`);
+  }
 }
 
 (async () => {
@@ -183,12 +212,12 @@ function checkGoogleDriveEnabled(config) {
   checkComposioSdk();
   await checkTelegram(config);
   const authOk = await checkComposioAuth(config);
-  await checkComposioUserId(config, authOk);
+  const userOk = checkUserId(config);
   await checkImageModel(config, authOk);
   for (const name of ['tiktok', 'instagram', 'facebook']) {
-    checkPlatformEnabled(name, config.platforms?.[name]);
+    await checkPlatform(name, config.platforms?.[name], config, authOk && userOk);
   }
-  checkGoogleDriveEnabled(config);
+  await checkGoogleDrive(config, authOk && userOk);
 
   const failed = checks.filter((c) => !c.ok);
   console.log('\n' + '─'.repeat(60));

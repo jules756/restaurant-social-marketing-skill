@@ -36,14 +36,12 @@ cd ~/restaurant-social-marketing-skill && git pull origin main
 ### Step 2 — Copy skills into Hermes (under `social-media/` category)
 
 ```bash
-rm -rf ~/.hermes/skills/social-media/restaurant-social-marketing
-rm -rf ~/.hermes/skills/social-media/restaurant-social-marketing-setup-verification
 mkdir -p ~/.hermes/skills/social-media
 cp -r ~/restaurant-social-marketing-skill/skills/* ~/.hermes/skills/social-media/
 cp -r ~/restaurant-social-marketing-skill/adapted-skills/* ~/.hermes/skills/social-media/
 ```
 
-**Do not** copy `docs/` or `legacy/`. Verify six skill dirs:
+**Do not** copy `docs/`. Verify six skill dirs:
 
 ```bash
 ls ~/.hermes/skills/social-media/ | grep -cE '(restaurant-marketing|content-preparation|marketing-intelligence|food-photography-hermes|social-media-seo-hermes|social-trend-monitor-hermes)'

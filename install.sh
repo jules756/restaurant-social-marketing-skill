@@ -5,9 +5,8 @@
 #   ./install.sh
 #
 # What it does:
-#   1. Copies custom skills + adapted skills into ~/.hermes/skills/social-media/
-#      (removes stale v2 directories first).
-#   2. Ensures @composio/core SDK is installed globally on the VM.
+#   1. Copies custom skills + adapted skills into ~/.hermes/skills/social-media/.
+#   2. Ensures @composio/core SDK is installed in the repo (local).
 #   3. Creates social-marketing/ working directory with the config template
 #      (default: $HOME/social-marketing). Prompts to wipe any prior client
 #      profile data.
@@ -42,15 +41,9 @@ echo "Skills:  $SKILLS_DIR"
 echo "Client:  $CLIENT_DIR"
 echo
 
-# 1. Copy skills — remove any prior v2 install in the same category first
+# 1. Copy skills
 mkdir -p "$SKILLS_DIR"
-for stale in restaurant-social-marketing restaurant-social-marketing-setup-verification; do
-  if [[ -d "$SKILLS_DIR/$stale" ]]; then
-    echo "Removing stale v2 skill: $SKILLS_DIR/$stale"
-    rm -rf "$SKILLS_DIR/$stale"
-  fi
-done
-echo "Copying v3 skills to $SKILLS_DIR …"
+echo "Copying skills to $SKILLS_DIR …"
 cp -r "$REPO_DIR/skills/"* "$SKILLS_DIR/"
 cp -r "$REPO_DIR/adapted-skills/"* "$SKILLS_DIR/"
 echo "  ✅ skills copied"
