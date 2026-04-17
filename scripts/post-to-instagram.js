@@ -31,7 +31,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeTool, uploadFile, loadConfig, PLATFORMS } = require('./composio-helpers');
+const { executeTool, loadConfig, PLATFORMS } = require('./composio-helpers');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -96,31 +96,10 @@ if (!dir) fail('--dir is required (path to the post directory)');
       return;
     }
 
-    // 1. Upload each slide. uploadFile returns { key, url, raw }; Instagram
-    //    needs an HTTPS url in image_url.
-    const uploaded = [];
-    for (const slide of slides) {
-      const upload = await uploadFile(config, ig.toolkit, ig.createMediaTool, slide, 'image/png');
-      if (typeof upload === 'string') {
-        // Back-compat if the helper still returns a bare key
-        uploaded.push({ key: upload, url: upload });
-      } else {
-        uploaded.push(upload);
-      }
-    }
-
-    // Get the ig_user_id — required by Instagram Graph API. Try in order:
-    // 1. config.platforms.instagram.igUserId (Installer pre-sets it)
-    // 2. Several Composio tool names that might return the authed IG user
-    // 3. Throw a clear error if still missing so the Installer fixes it.
+    // Resolve ig_user_id
     let igUserId = config.platforms?.instagram?.igUserId;
     if (!igUserId) {
-      const meAttempts = [
-        'INSTAGRAM_GET_USER_ME',
-        'INSTAGRAM_GET_ME',
-        'INSTAGRAM_GET_USER',
-        'INSTAGRAM_GET_INSTAGRAM_BUSINESS_ACCOUNT'
-      ];
+      const meAttempts = ['INSTAGRAM_GET_USER_INFO', 'INSTAGRAM_GET_USER_ME', 'INSTAGRAM_GET_ME'];
       for (const tool of meAttempts) {
         try {
           const r = await executeTool(config, tool, {});
@@ -130,26 +109,33 @@ if (!dir) fail('--dir is required (path to the post directory)');
       }
     }
     if (!igUserId) {
-      fail('Could not resolve ig_user_id. Set config.platforms.instagram.igUserId to your Instagram Business Account ID (find it in Meta Business Suite → Settings → Instagram accounts, or call the IG Graph API /me/accounts).');
+      fail('Could not resolve ig_user_id. Set config.platforms.instagram.igUserId (Meta Business Suite → Settings → Instagram accounts).');
     }
 
-    // 2. Create one CAROUSEL_ITEM container per slide.
-    //    NOTE: media_type is only valid on the parent CAROUSEL container.
-    //    Child items use is_carousel_item: true + image_url only.
+    // Approach: use Composio's image_file parameter (per docs, Composio
+    // hosts the file and gives IG a URL IG trusts). Avoid imgbb/signed-URL
+    // rejection entirely.
+    //
+    // 1. Create one CAROUSEL_ITEM container per slide, passing image_file
+    //    as the absolute path. Composio handles hosting server-side.
     const childIds = [];
-    for (const u of uploaded) {
+    for (const slide of slides) {
+      const absPath = path.resolve(slide);
       const args = {
         ig_user_id: igUserId,
         is_carousel_item: true,
-        image_url: u.url || u.key
+        image_file: absPath
       };
       const result = await executeTool(config, ig.createMediaTool, args);
       const id = result.data?.id || result.id || result.data?.container_id;
-      if (!id) throw new Error(`CAROUSEL_ITEM create returned no id. args=${JSON.stringify(args).slice(0, 200)} response=${JSON.stringify(result).slice(0, 400)}`);
+      if (!id) {
+        const msg = typeof result?.data?.message === 'string' ? result.data.message : JSON.stringify(result).slice(0, 400);
+        throw new Error(`CAROUSEL_ITEM create returned no id. args=${JSON.stringify(args).slice(0, 200)} response=${msg}`);
+      }
       childIds.push(id);
     }
 
-    // 3. Create the CAROUSEL parent container
+    // 2. Create the CAROUSEL parent container
     const carouselArgs = {
       ig_user_id: igUserId,
       media_type: 'CAROUSEL',
