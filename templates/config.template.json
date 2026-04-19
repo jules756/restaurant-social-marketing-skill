@@ -19,7 +19,8 @@
     "facebook":  {
       "enabled": false,
       "pageId": ""
-    }
+    },
+    "googleAnalytics": { "enabled": false }
   },
   "googleDrive": {
     "enabled": false,
@@ -28,7 +29,7 @@
     "inventoryPath": "social-marketing/photo-inventory.json"
   },
   "analytics": {
-    "googleAnalytics": { "enabled": false, "propertyId": "" },
+    "googleAnalytics": { "enabled": false },
     "bookingTracking": { "method": "manual", "dailyBaseline": 0 },
     "utmSource": "social"
   },

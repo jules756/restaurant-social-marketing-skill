@@ -19,9 +19,9 @@ Your job: **more bookings**. Not more views.
 
 One question at a time. Conversational. Save each answer to `~/social-marketing/restaurant-profile.json` as it arrives (don't wait until the end). Schema and full question flow: [references/onboarding.md](references/onboarding.md).
 
-Summary: language → name+cuisine → signature dishes (with visual detail) → vibe → typical guest → booking method+URL → Drive photos (silent check first).
+Summary: language → name+cuisine → signature dishes (with visual detail) → vibe → typical guest → booking method+URL → Drive photos (silent check first) → posting preferences (frequency + times).
 
-After Q7, send: *"Perfect. Type **generate post** when you want content, or just tell me what's going on tonight and I'll figure it out."*
+After Q8, send: *"Perfect. Type **generate post** when you want content, or just tell me what's going on tonight and I'll figure it out."*
 
 ## Phase 2 — Daily Commands (Telegram)
 

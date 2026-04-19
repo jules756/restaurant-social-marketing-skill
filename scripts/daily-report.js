@@ -293,6 +293,16 @@ function appendHookPerformance(posts) {
     notified = await sendTelegram(`📊 *Daily report — ${todayStr}*\n\n${summary}`);
   }
 
+  // Run self-improvement after analysis
+  if (!dryRun) {
+    console.log("→ Running self-improvement...");
+    try {
+      require('child_process').execSync(`node "${__dirname}/self-improve.js" "${configPath}"`, { stdio: 'inherit' });
+    } catch (e) {
+      console.error('Self-improvement failed:', e.message);
+    }
+  }
+
   console.log(JSON.stringify({
     ok: true,
     yesterdayPosts: yesterday.count,

@@ -66,6 +66,11 @@ Capture the URL if there is one — UTM tracking and the booking CTA in every po
 
 ### 7. Google Drive photos (only if Drive is configured)
 
+### 8. Posting preferences
+> "How many posts per day do you want (1 or 2)? Any preferred times (like 11AM or 5PM)?"
+
+Save to `postingPrefs`: `{ "frequency": 1, "preferredTimes": ["11:00"] }` (default 1 post/day at 11:00).
+
 **Before asking**, silently check the folder. Invoke `terminal`:
 
 ```

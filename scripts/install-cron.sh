@@ -30,6 +30,8 @@ WEEKLY_DEFAULT="0 9 * * 1"
 
 DAILY_TAG="# RESTAURANT-DAILY-REPORT"
 WEEKLY_TAG="# RESTAURANT-WEEKLY-RESEARCH"
+DAILY_POST_TAG="# RESTAURANT-DAILY-POST"
+WEEKLY_REVIEW_TAG="# RESTAURANT-WEEKLY-REVIEW"
 
 if [[ ! -f "$CONFIG" ]]; then
   echo "❌ Config not found at $CONFIG. Run install.sh first." >&2
@@ -62,6 +64,7 @@ case "$WHICH" in
   all)
     install_entry "$DAILY_DEFAULT"  "scripts/daily-report.js"     "$DAILY_TAG"
     install_entry "$WEEKLY_DEFAULT" "scripts/weekly-research.js"  "$WEEKLY_TAG"
+    install_entry "0 11 * * *" "scripts/daily-post.js" "$DAILY_POST_TAG"
     ;;
   daily)
     install_entry "${CUSTOM_SCHEDULE:-$DAILY_DEFAULT}" "scripts/daily-report.js" "$DAILY_TAG"
@@ -69,8 +72,14 @@ case "$WHICH" in
   weekly)
     install_entry "${CUSTOM_SCHEDULE:-$WEEKLY_DEFAULT}" "scripts/weekly-research.js" "$WEEKLY_TAG"
     ;;
+  daily-post)
+    install_entry "0 11 * * *" "scripts/daily-post.js" "$DAILY_POST_TAG"
+    ;;
+  weekly-review)
+    install_entry "0 10 * * 1" "scripts/weekly-review.js" "$WEEKLY_REVIEW_TAG"
+    ;;
   *)
-    echo "Unknown job: $WHICH. Use: all | daily | weekly" >&2
+    echo "Unknown job: $WHICH. Use: all | daily | weekly | daily-post | weekly-review" >&2
     exit 1
     ;;
 esac

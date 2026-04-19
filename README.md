@@ -18,10 +18,13 @@ Hermes Agent skills + Node scripts that turn a restaurant's social media into an
 - `daily-report.js` — 10:00 local. Pulls IG post insights via Composio, computes yesterday vs 7d baseline, sends Telegram summary + diagnostic action.
 - `weekly-research.js` — Mondays 09:00. OpenRouter web-search (perplexity/sonar by default) synthesises platform updates, viral formats, hook trends, upcoming dates + 3 actions for the week. Delivered via Telegram.
 
-**Not wired up yet (next phase):**
-- Telegram-triggered `generate post` — Hermes orchestration layer still hallucinates instead of invoking scripts. All pipeline commands today are run manually from the VM terminal.
-- Drive img2img (bot uses real food photos as references). `drive-sync.js` saves the folder ID; AI picks which subfolder at post time.
-- Platform posting scripts for TikTok + Facebook need live verification.
+**Autonomous "Notary Book" System (New - Now Live):**
+- `daily-post.js` — Fully autonomous daily posting at 11:00 (configurable). Generates slides, adds overlays, posts to Instagram via Composio, sends Telegram notification.
+- `self-improve.js` — Learning engine. Analyzes `hook-performance.json`, learns best posting times and hooks, updates `strategy.json`.
+- `weekly-review.js` — Monday 10:00 strategy review. Evaluates if the applied strategy is working based on performance vs trends.
+- Crons installed via `./scripts/install-cron.sh daily-post` and `weekly-review`.
+
+The system now runs completely autonomously while still allowing owner interaction via Telegram.
 
 ## Known platform constraints
 
