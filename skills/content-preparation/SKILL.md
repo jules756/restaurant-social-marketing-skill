@@ -20,14 +20,26 @@ metadata.json                    — { contentType, approach, platform, dishes, 
 
 ## The Decision Matrix (Run in Order)
 
-For every post:
+For every post, make intelligent decisions:
 
-1. **Content type** — regular dish, promotion, knowledge-base story, trend-driven, spontaneous. Orchestrator passes this as input.
-2. **Reference photos?** — `read_file` the inventory at `~/social-marketing/photo-inventory.json`. If `byDish[<dishName>].bestFile` exists → **img2img** (preferred). Otherwise → **txt2img**.
-3. **Urgency?** — `fast` (same-day promo) vs `quality` (planned). Passed by orchestrator or inferred from content type.
-4. **Trending format?** — `read_file` `~/social-marketing/trend-report.json` if present. If a format is flagged `testNext: true` and fits the content type, apply it.
+1. **Content type** — regular dish, promotion, knowledge-base story, trend-driven, spontaneous. Use context from orchestrator + recent performance + current trends.
+2. **Reference photos?** — **CRITICAL**. Always check `~/social-marketing/photo-inventory.json`. If a good photo exists for the dish → **use img2img with real photo** (strongly preferred). This dramatically improves authenticity.
+3. **Angle & Tone** — Choose based on `strategy.json`, recent performance, and owner context. Should feel natural to the restaurant's vibe.
+4. **Urgency & Style** — `fast` for same-day promos, `quality` for planned content. Adjust prompt complexity accordingly.
+5. **Trending format?** — Check `trend-report.json` and apply relevant formats when they fit naturally.
 
 Never skip step 2. Inventory check happens before prompt construction.
+
+**Execution:**
+After deciding approach and writing caption + overlays, call the pipeline script:
+
+```bash
+node ~/restaurant-social-marketing-skill/scripts/daily-post.js \
+  --config ~/social-marketing/config.json \
+  --dish "Pasta Bolognese"
+```
+
+This script handles generation, overlays, posting, and self-improvement.
 
 ## Pass-by-Pass Execution (Hermes Tool Calls)
 
@@ -43,13 +55,13 @@ memory: last 10 hook-performance entries for this restaurant
 
 ### Step 2: Pick a hook + write overlay texts
 
-Load [social-media-seo-hermes/references/hooks.md](../../adapted-skills/social-media-seo-hermes/references/hooks.md) via `skill_view('social-media-seo-hermes', 'references/hooks.md')`. Pick a hook category based on: content type, restaurant fit (cuisine + vibe + typical guest), memory of what's worked, trend-report hints. Write 2–3 hook variants in the restaurant's voice. Pick the strongest.
+Load [social-media-seo-hermes/references/hooks.md](../../skills/social-media-seo-hermes/references/hooks.md) via `skill_view('social-media-seo-hermes', 'references/hooks.md')`. Pick a hook category based on: content type, restaurant fit (cuisine + vibe + typical guest), memory of what's worked, trend-report hints. Write 2–3 hook variants in the restaurant's voice. Pick the strongest.
 
-Write 6 overlay texts (4–6 words, 3–4 lines per slide). Slide 1 is the hook; Slide 6 is the CTA from [social-media-seo-hermes/references/ctas.md](../../adapted-skills/social-media-seo-hermes/references/ctas.md). Middle slides build the narrative.
+Write 6 overlay texts (4–6 words, 3–4 lines per slide). Slide 1 is the hook; Slide 6 is the CTA from [social-media-seo-hermes/references/ctas.md](../../skills/social-media-seo-hermes/references/ctas.md). Middle slides build the narrative.
 
 ### Step 3: Build prompts.json and texts.json
 
-Load [food-photography-hermes/SKILL.md](../../adapted-skills/food-photography-hermes/SKILL.md) for lighting presets and plating vocabulary tied to the restaurant's vibe.
+Load [food-photography-hermes/SKILL.md](../../skills/food-photography-hermes/SKILL.md) for lighting presets and plating vocabulary tied to the restaurant's vibe.
 
 Write two files to `/tmp/` (Hermes `terminal` tool):
 
@@ -105,7 +117,7 @@ Produces `slide-1.png` … `slide-6.png` (final). If `canvas` native dep is miss
 
 ### Step 6: Write caption
 
-Compose the caption yourself (LLM reasoning) using the keyword-first rules from [social-media-seo-hermes/SKILL.md](../../adapted-skills/social-media-seo-hermes/SKILL.md). First 125 chars lead with what the post is about + restaurant name + city; hook nuance comes after; hashtags from [social-media-seo-hermes/references/keywords.md](../../adapted-skills/social-media-seo-hermes/references/keywords.md); CTA line with UTM parameters.
+Compose the caption yourself (LLM reasoning) using the keyword-first rules from [social-media-seo-hermes/SKILL.md](../../skills/social-media-seo-hermes/SKILL.md). First 125 chars lead with what the post is about + restaurant name + city; hook nuance comes after; hashtags from [social-media-seo-hermes/references/keywords.md](../../skills/social-media-seo-hermes/references/keywords.md); CTA line with UTM parameters.
 
 Write to `~/social-marketing/posts/<timestamp>/caption.txt` via `patch` or `terminal`.
 

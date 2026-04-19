@@ -1,66 +1,77 @@
-# Natural-Language Promotion Detection
+# Natural Language Promotions Detection & Handling
 
-Parse every owner message passively. No formatted command required. Detect on signals, pick mode, act.
+## Detection Signals
 
-## Signals
+The agent must parse **every message** from the owner for promotion signals. No special command format is required.
 
-Any of these in an owner message → likely promotion:
+### Strong Signals (high confidence)
+- Discount: "50% off", "20% discount", "buy one get one", "half price"
+- Time-limited: "tonight", "this weekend", "until Friday", "limited time"
+- New item: "new dish", "just added", "new on the menu", "just got"
+- Event: "tasting menu", "special event", "live music", "happy hour"
+- Delivery: "just got a delivery of", "fresh truffles", "new shipment"
+- Seasonal: "summer menu", "Christmas menu", "Midsommar special"
 
-- Discount phrasing: `X% off`, `half price`, `buy one get one`, `50%`
-- Time constraints: `tonight`, `this weekend`, `Friday only`, `until Sunday`, `limited time`
-- Menu novelty: `new dish`, `seasonal menu`, `testing a new`, `back by popular demand`
-- Event framing: `happy hour`, `tasting menu`, `prix fixe`, `collaboration`, `pop-up`, `chef's table`
-- Supply moments: `just got a delivery of`, `fresh shipment`, `last of the truffle season`
-- Occasion: `Valentine's`, `Midsommar`, `graduation`, `anniversary`, `birthday special`
+### Medium Signals
+- "special tonight"
+- "prix fixe"
+- "collaboration with"
+- "launching on Friday"
+- "coming soon"
 
-If detected, pick a mode.
+## Response Modes
 
-## Mode 1 — Same-day / tonight
+### 1. Same-Day / Urgent Promotion
+**Trigger**: Strong time pressure ("tonight", "now", "this evening")
+**Action**: Generate and post immediately, no approval needed.
+**Tone**: Fast, energetic, "on it".
 
-**Trigger:** promotion window is today/tonight, or within 24 hours.
+**Example**:
+Owner: "50% off pizza tonight 9pm–midnight"
+Agent: Generates post → posts to Instagram → notifies owner with permalink.
 
-Example: *"50% off pizza tonight 9pm–midnight"*
+### 2. Planned Promotion
+**Trigger**: Future date or multi-day campaign ("starting Friday", "tasting menu next week")
+**Action**:
+- Confirm details with owner
+- Build a full campaign: teaser → launch → mid-run → last chance
+- Create content calendar for the promotion
 
-**Act immediately — no approval needed.** Speed > polish. Use `--urgency fast` on generate-slides.js to get standard-quality images faster. Plain overlay. Post as soon as it's ready. Confirm when it's out, don't confirm before.
+### 3. Spontaneous Moment
+**Trigger**: Unexpected positive event ("just got truffle delivery", "chef made something amazing")
+**Action**: Offer to post immediately.
+**Example Response**: "Want me to post about the fresh truffle delivery right now? I can have it ready in 2 minutes."
 
-Response pattern:
-> *"On it. Posting now — live in a minute."*
+## 60/40 Rule
 
-## Mode 2 — Planned
+During any active promotion period:
+- 60% of posts = regular menu content
+- 40% of posts = promotional content
 
-**Trigger:** promotion starts in the future (tomorrow+, next week, next month).
+Track this using `memory` of recent posts.
 
-Example: *"We have a tasting menu starting Friday"*
+## Implementation Notes
 
-**Confirm details, build a 4-post calendar:**
-- **Teaser** (T-5 to T-3 days): curiosity hook, one dish revealed.
-- **Launch** (day of start): full reveal + clear CTA with dates.
-- **Mid-run** (midpoint): social-proof / reaction hook — *"booked solid tonight"*, *"this one's going fast"*.
-- **Last chance** (T-1 or final day): urgency hook.
+- Parse passively on every message
+- Never require formatted commands
+- Always prioritize speed for same-day promotions
+- Use `memory` to avoid asking the same details twice
+- Log all promotions to `knowledge-base/promotions.json` for future reference
 
-Response pattern:
-> *"Tasting menu starting Friday — love it. How long does it run? Quick confirm on price and the dishes, then I'll set up a 4-post cadence: teaser Monday, launch Friday, one mid-run, one last-chance."*
+## Examples
 
-## Mode 3 — Spontaneous moment
+**Same-day:**
+Owner: "Let's do 2 for 1 cocktails tonight"
+Agent: Immediately generates and posts promotional carousel.
 
-**Trigger:** owner mentions something happening now that isn't a scheduled promo.
+**Planned:**
+Owner: "We're launching a summer tasting menu next Friday"
+Agent: "Great! Should I start building a teaser campaign this week?"
 
-Example: *"We just got our truffle delivery"* or *"The lamb came out amazing tonight"*
+**Spontaneous:**
+Owner: "The chef just made the most incredible lobster dish"
+Agent: "That sounds amazing. Want me to post about it right now?"
 
-**Offer to post. Don't force.**
+---
 
-Response pattern:
-> *"Want to post about that now? Ready in 5 minutes. Good hook — the owner-moment content tends to do well."*
-
-If yes, run `generate post` with the spontaneous hook angle.
-
-## The 60/40 Rule
-
-During an active planned promotion, mix: **60% regular content, 40% promo content**. A feed that's 100% promo stops working fast. Track via `memory` how many posts this week were promo vs regular.
-
-## Never
-
-- Wait for a formatted command like `/promo`. Parse naturally.
-- Treat a same-day as a planned campaign. Speed matters for *"tonight"*.
-- Post a planned promo before confirming price / dates / inclusions.
-- Miss a spontaneous moment. *"We just got X"* is gold.
+This file is referenced from `restaurant-marketing/SKILL.md`. Update this file when new promotion patterns are discovered.

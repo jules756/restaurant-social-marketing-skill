@@ -106,7 +106,17 @@ if (!dir) fail('--dir is required (path to the post directory)');
     if (slides.length === 0) fail(`No slide-*.png found in ${postDir}`);
 
     const captionPath = path.join(postDir, 'caption.txt');
-    const caption = fs.existsSync(captionPath) ? fs.readFileSync(captionPath, 'utf-8').trim() : '';
+    let caption = fs.existsSync(captionPath) ? fs.readFileSync(captionPath, 'utf-8').trim() : '';
+
+    // Load metadata if available for richer context
+    const metadataPath = path.join(postDir, 'metadata.json');
+    let metadata = {};
+    if (fs.existsSync(metadataPath)) {
+      try {
+        metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+        if (metadata.caption) caption = metadata.caption; // prefer enriched caption
+      } catch (e) {}
+    }
 
     const ig = PLATFORMS.instagram;
 

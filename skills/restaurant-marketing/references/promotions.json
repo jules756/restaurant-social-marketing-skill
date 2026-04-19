@@ -1,0 +1,16 @@
+{
+  "_comment": "Promotion history - automatically logged when owner mentions promotions",
+  "promotions": [
+    {
+      "date": "2026-04-19",
+      "type": "same-day",
+      "description": "50% off pizza tonight",
+      "detectedFrom": "owner message",
+      "actionTaken": "posted immediately",
+      "performance": null,
+      "notes": ""
+    }
+  ],
+  "activePromotions": [],
+  "lastUpdated": "2026-04-19T00:00:00.000Z"
+}

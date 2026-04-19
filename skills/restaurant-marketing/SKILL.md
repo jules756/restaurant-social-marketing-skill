@@ -21,7 +21,7 @@ One question at a time. Conversational. Save each answer to `~/social-marketing/
 
 Summary: language → name+cuisine → signature dishes (with visual detail) → vibe → typical guest → booking method+URL → Drive photos (silent check first) → posting preferences (frequency + times).
 
-After Q8, send: *"Perfect. Type **generate post** when you want content, or just tell me what's going on tonight and I'll figure it out."*
+After Q8, automatically run competitor research (Module D from marketing-intelligence), then send: *"Perfect. I've researched your local competitors and saved the insights. Type **generate post** when you want content, or just tell me what's going on tonight and I'll figure it out."*
 
 ## Phase 2 — Daily Commands (Telegram)
 
@@ -31,20 +31,30 @@ The owner sees: one short ack if it will take >20 sec (*"On it — about 1 minut
 
 Execution:
 
-1. `read_file`: `~/social-marketing/restaurant-profile.json`. Pick the dish (default: first signature dish, or one the owner mentioned).
+1. `read_file`: `~/social-marketing/restaurant-profile.json` and `strategy.json`. 
+   Make an intelligent decision:
+   - Which dish to feature (rotate based on performance, seasonality, or owner mention)
+   - Which angle/hook category to use (based on `strategy.json` and recent performance)
+   - What tone and urgency to apply
+   - Whether to include a promotion or knowledge element
 2. `memory`: pull recent hook performance for this restaurant.
-3. Delegate actual image generation to [content-preparation](../content-preparation/SKILL.md) — it owns the img2img vs txt2img decision, prompt construction (using [food-photography-hermes](../../adapted-skills/food-photography-hermes/SKILL.md) vocabulary), and hook/caption writing (using [social-media-seo-hermes](../../adapted-skills/social-media-seo-hermes/SKILL.md) library). Captions and hooks come from LLM reasoning, not hardcoded.
-4. content-preparation returns a directory with `slide-1.png` … `slide-6.png` + `caption.txt`.
+3. **Delegate to content-preparation skill** using Hermes `terminal` tool (do not call scripts directly from this skill). Pass:
+   - Selected dish
+   - Content type (regular, promotion, knowledge, trend-driven)
+   - Urgency level (fast/quality)
+   - Any trend hints from memory
+
+content-preparation owns the complete pipeline and returns the post directory.
 5. Attach all slides to Telegram via `terminal` using the Bot API's `sendMediaGroup` endpoint with `config.telegram.{botToken,chatId}` — this is the only supported attachment path. Never describe images in text instead of attaching.
 6. Send the caption as a follow-up text message (same Bot API).
 7. Ask: *"Ready to post?"*
-8. On yes, for each enabled platform in `config.platforms`, invoke `terminal`:
-   ```bash
-   node ~/restaurant-social-marketing-skill/scripts/post-to-<platform>.js \
-     --config ~/social-marketing/config.json \
-     --dir ~/social-marketing/posts/<timestamp>
-   ```
-   Each script prints a JSON line: `{"ok": true, "platform": "...", "mediaId": "...", "permalink": "..."}` on success, `{"ok": false, "error": "..."}` on failure. Parse the last line of stdout. Report results honestly to the owner — *"Posted to Instagram"* + permalink, or *"Instagram failed: [short reason]. Saved for retry."* Do not pretend success.
+8. On yes, invoke the pipeline script via `terminal`:
+    ```bash
+    node ~/restaurant-social-marketing-skill/scripts/daily-post.js \
+      --config ~/social-marketing/config.json \
+      --dish "[selected dish name]"
+    ```
+    The script handles generation, posting to all enabled platforms, and self-improvement. It returns JSON status. Report results honestly to the owner.
 9. `memory` append a record: `{ hookCategory, hookText, dish, platform, approach, timestamp, mediaId, permalink }`. This feeds future selection.
 10. TikTok posts as draft: *"Added the draft to your TikTok inbox. Pick a trending sound before publishing."*
 
@@ -79,9 +89,26 @@ Full patterns: [references/conversation.md](references/conversation.md).
 
 ## Natural-Language Promotions
 
-Parse passively on every message. No formatted command required. Signals: discount %, limited time, seasonal menu, new dish, event, happy hour, prix fixe, collaboration, *"special tonight"*, *"just got a delivery of"*.
+**Parse every message passively.** No special command needed.
 
-Three modes: same-day (post immediately, no approval, speed > polish), planned (confirm details + build a teaser→launch→mid-run→last-chance calendar), spontaneous (offer to post now). 60/40 rule during active promos: 60% regular, 40% promo. Full detection logic: [references/promotions.md](references/promotions.md).
+See full detection logic, response modes, and 60/40 rule in [references/promotions.md](references/promotions.md).
+
+**Key behaviors:**
+- Detect promotions naturally ("50% off tonight", "just got truffle delivery", "tasting menu starting Friday")
+- Same-day promotions: post immediately (speed > polish)
+- Planned promotions: confirm details then build campaign
+- Spontaneous moments: offer to post now
+- Maintain 60/40 rule during active promotions
+- Log all detected promotions to `knowledge-base/promotions.json` (with date, type, details, and outcome)
+
+**Three response modes:**
+- **Same-day / urgent**: Post immediately, no approval (speed > polish)
+- **Planned promotion**: Confirm details, then build a full campaign (teaser → launch → mid-run → last chance)
+- **Spontaneous moment**: Offer to post now ("Want me to post about the truffle delivery right now?")
+
+During active promotions: maintain **60/40 rule** — 60% regular content, 40% promotional.
+
+Full detection logic and examples are in [references/promotions.md](references/promotions.md).
 
 ## Knowledge-Gap Probing
 
@@ -93,7 +120,7 @@ Awareness of booking-driving dates. Checked every Monday during weekly research.
 
 ## Cold Start
 
-First-ever `generate post` — no Drive photos, no competitor data, no trend report. Acknowledge honestly: *"First post! I don't have your photos yet so I'll generate images from your description — once you add photos to the shared folder, the quality jumps."* Pick the first signature dish. Default to story-behind-dish or reaction hook (highest reliable engagement in [social-media-seo-hermes](../../adapted-skills/social-media-seo-hermes/SKILL.md)). After the first post ships, nudge for Drive photos and ask once about style: *"How did those images feel? Style right?"* Save any adjustments to `restaurant-profile.json.imageStyleNotes`. **Cold start never blocks posting.** A real post today > a polished post in three days.
+First-ever `generate post` — no Drive photos, no competitor data, no trend report. Acknowledge honestly: *"First post! I don't have your photos yet so I'll generate images from your description — once you add photos to the shared folder, the quality jumps."* Pick the first signature dish. Default to story-behind-dish or reaction hook (highest reliable engagement in [social-media-seo-hermes](../../skills/social-media-seo-hermes/SKILL.md)). After the first post ships, nudge for Drive photos and ask once about style: *"How did those images feel? Style right?"* Save any adjustments to `restaurant-profile.json.imageStyleNotes`. **Cold start never blocks posting.** A real post today > a polished post in three days.
 
 ## Error Handling
 

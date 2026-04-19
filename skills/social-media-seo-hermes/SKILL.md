@@ -23,11 +23,29 @@ When writing a post's hook (slide 1 text):
 
 ## Caption Heuristics
 
-### Instagram: keyword-first
+### Instagram: keyword-first + strong CTA + hashtags
 
-The first 125 characters are indexable. Lead with what the post is about in plain language, not with the hook. Hook belongs on slide 1 as visual text.
+**Structure for high performance:**
+- First 125 chars: keyword-first (cuisine + city + dish)
+- Middle: storytelling or benefit
+- End: strong CTA with booking link
+- 10-15 targeted hashtags (mix of popular + niche)
 
-**Good:**
+**High-Converting Caption Framework:**
+
+**Structure:**
+1. **First 125 chars**: Keyword-first (cuisine + city + dish name)
+2. **Middle**: Emotional/storytelling element or unique benefit
+3. **End**: Strong CTA with booking link + 10-15 targeted hashtags
+
+**Example Templates:**
+- "Best [Cuisine] in [City]: Our [Dish] is pure comfort. [Story]. Book your table now → [bookingUrl]"
+- "Hidden gem in [City]: This [Dish] is why locals keep coming back. [Benefit]. Reserve here: [bookingUrl]"
+
+**Hashtag Strategy (12 total):**
+- 4 broad: #Foodie #InstaFood #FoodPorn #Foodstagram
+- 5 niche: #[Cuisine]Food #[City]Eats #RestaurantFood #[SpecificDish] #HiddenGem
+- 3 branded: #RestaurantName #OurSignatureDish #EatAt[RestaurantName]
 > *"Hand-pulled rigatoni with slow-cooked pork ragu — bronze-die extruded, simmered 6 hours. Book at [Restaurant], link in bio. [City]'s best pasta [hook continues]…"*
 
 **Bad:**

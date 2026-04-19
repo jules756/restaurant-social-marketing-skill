@@ -26,6 +26,8 @@ Hermes Agent skills + Node scripts that turn a restaurant's social media into an
 
 The system now runs completely autonomously while still allowing owner interaction via Telegram.
 
+See [SETUP.md](SETUP.md) for setup and usage instructions.
+
 ## Known platform constraints
 
 - **No trending music on carousels via API.** Instagram's Graph API doesn't expose the consumer music library to business accounts. After publish, `post-to-instagram.js` pings the owner on Telegram: *"Want music? Open the post → ⋯ → Share as Reel."* Instagram's mobile app handles the conversion + music picker natively.
