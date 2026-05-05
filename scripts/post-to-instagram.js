@@ -40,7 +40,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeTool, loadConfig, PLATFORMS } = require('./composio-helpers');
+const { callTool, loadConfig, findToolByPattern } = require('./mcp-client');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -108,16 +108,14 @@ if (!dir) fail('--dir is required (path to the post directory)');
     const captionPath = path.join(postDir, 'caption.txt');
     const caption = fs.existsSync(captionPath) ? fs.readFileSync(captionPath, 'utf-8').trim() : '';
 
-    const ig = PLATFORMS.instagram;
-
     if (dryRun) {
       dryLog('upload_files', slides.map((s) => path.basename(s)));
       slides.forEach((_, i) =>
-        dryLog(`create_media_container_${i + 1}`, { tool: ig.createMediaTool, media_type: 'IMAGE', is_carousel_item: true })
+        dryLog(`create_media_container_${i + 1}`, { tool: 'INSTAGRAM_POST_IG_USER_MEDIA', media_type: 'IMAGE', is_carousel_item: true })
       );
-      dryLog('create_carousel', { tool: ig.createMediaTool, media_type: 'CAROUSEL', children_count: slides.length, caption_preview: caption.slice(0, 80) });
+      dryLog('create_carousel', { tool: 'INSTAGRAM_POST_IG_USER_MEDIA', media_type: 'CAROUSEL', children_count: slides.length, caption_preview: caption.slice(0, 80) });
       if (!draft) {
-        dryLog('publish_carousel', { tool: ig.publishMediaTool });
+        dryLog('publish_carousel', { tool: 'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH' });
       } else {
         dryLog('draft_mode', { skip_publish: true });
       }
@@ -131,22 +129,6 @@ if (!dir) fail('--dir is required (path to the post directory)');
       return;
     }
 
-    // Resolve ig_user_id
-    let igUserId = config.platforms?.instagram?.igUserId;
-    if (!igUserId) {
-      const meAttempts = ['INSTAGRAM_GET_USER_INFO', 'INSTAGRAM_GET_USER_ME', 'INSTAGRAM_GET_ME'];
-      for (const tool of meAttempts) {
-        try {
-          const r = await executeTool(config, tool, {});
-          igUserId = r?.data?.id || r?.id || r?.data?.ig_user_id;
-          if (igUserId) break;
-        } catch {}
-      }
-    }
-    if (!igUserId) {
-      fail('Could not resolve ig_user_id. Set config.platforms.instagram.igUserId (Meta Business Suite → Settings → Instagram accounts).');
-    }
-
     // Approach: use Composio's image_file parameter (per docs, Composio
     // hosts the file and gives IG a URL IG trusts). Avoid imgbb/signed-URL
     // rejection entirely.
@@ -157,11 +139,10 @@ if (!dir) fail('--dir is required (path to the post directory)');
     for (const slide of slides) {
       const absPath = path.resolve(slide);
       const args = {
-        ig_user_id: igUserId,
         is_carousel_item: true,
         image_file: absPath
       };
-      const result = await executeTool(config, ig.createMediaTool, args);
+      const result = await callTool(config, 'INSTAGRAM_POST_IG_USER_MEDIA', args);
       const id = result.data?.id || result.id || result.data?.container_id;
       if (!id) {
         const msg = typeof result?.data?.message === 'string' ? result.data.message : JSON.stringify(result).slice(0, 400);
@@ -172,7 +153,6 @@ if (!dir) fail('--dir is required (path to the post directory)');
 
     // 2. Create the CAROUSEL parent container.
     const carouselArgs = {
-      ig_user_id: igUserId,
       media_type: 'CAROUSEL',
       children: childIds,
       caption
@@ -185,7 +165,7 @@ if (!dir) fail('--dir is required (path to the post directory)');
       // Best-effort — Instagram's carousel audio support is limited.
       carouselArgs.audio_name = musicName;
     }
-    const carouselResult = await executeTool(config, ig.createMediaTool, carouselArgs);
+    const carouselResult = await callTool(config, 'INSTAGRAM_POST_IG_USER_MEDIA', carouselArgs);
     const carouselId = carouselResult.data?.id || carouselResult.id || carouselResult.data?.container_id;
     if (!carouselId) throw new Error(`CAROUSEL create returned no id: ${JSON.stringify(carouselResult).slice(0, 200)}`);
 
@@ -217,8 +197,7 @@ if (!dir) fail('--dir is required (path to the post directory)');
     }
 
     // 4. Publish
-    const publishResult = await executeTool(config, ig.publishMediaTool, {
-      ig_user_id: igUserId,
+    const publishResult = await callTool(config, 'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH', {
       creation_id: carouselId
     });
     const mediaId = publishResult.data?.id || publishResult.id;
@@ -228,7 +207,7 @@ if (!dir) fail('--dir is required (path to the post directory)');
     let permalink = publishResult.data?.permalink || publishResult.permalink || null;
     if (!permalink) {
       try {
-        const meta = await executeTool(config, 'INSTAGRAM_GET_IG_MEDIA', {
+        const meta = await callTool(config, 'INSTAGRAM_GET_IG_MEDIA', {
           ig_media_id: mediaId,
           fields: 'permalink'
         });
