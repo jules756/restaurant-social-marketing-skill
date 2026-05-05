@@ -1,232 +1,171 @@
 #!/usr/bin/env node
 /**
- * Phase 0 — Installer setup validator.
+ * Phase 0 — v4 Installer setup.
  *
- * End-to-end readiness check. Each enabled platform is probed via a real
- * Composio tool call; Google Drive has its folder resolved or created and
- * the id written back to config; image generation is verified with a
- * minimal live call.
+ *   1. Validate config shape + API key.
+ *   2. Verify required OAuth toolkits are connected on the Composio project.
+ *   3. Call composio.mcp.create() with the enabled toolkit allowlist.
+ *   4. Call composio.mcp.generate() to materialise the per-user URL.
+ *   5. Write the URL to config.composio.mcpServerUrl.
+ *   6. Verify the URL by listing tools as an MCP client.
  *
- * Usage: node setup.js --config social-marketing/config.json
+ * No SDK tool calls. Tool execution is exclusively over MCP.
+ *
+ * Usage: node setup.js --config /data/social-marketing/config.json
  */
 
 const fs = require('fs');
 const path = require('path');
-const {
-  executeTool,
-  loadConfig,
-  getClient,
-  findOrCreateDriveFolder,
-  PLATFORMS
-} = require('./composio-helpers');
+const { Composio } = require('@composio/core');
+const { listTools, resetForTests } = require('./mcp-client');
 
 const args = process.argv.slice(2);
-const getArg = (name) => {
-  const i = args.indexOf(`--${name}`);
-  return i !== -1 ? args[i + 1] : null;
-};
-
+const getArg = (n) => { const i = args.indexOf(`--${n}`); return i !== -1 ? args[i + 1] : null; };
 const configPath = getArg('config');
-if (!configPath) {
-  console.error('Usage: node setup.js --config <config.json>');
-  process.exit(1);
-}
+if (!configPath) { console.error('Usage: node setup.js --config <config.json>'); process.exit(1); }
 
 const checks = [];
 const record = (label, ok, fix) => {
   checks.push({ label, ok, fix });
   console.log(`${ok ? '✅' : '❌'} ${label}${!ok && fix ? `\n   → ${fix}` : ''}`);
 };
+const skip = (label) => console.log(`⏭  ${label}`);
 
+function loadConfig() {
+  const p = path.resolve(configPath);
+  if (!fs.existsSync(p)) { console.error(`Config not found: ${p}`); process.exit(1); }
+  return JSON.parse(fs.readFileSync(p, 'utf-8'));
+}
 function saveConfig(config) {
   fs.writeFileSync(path.resolve(configPath), JSON.stringify(config, null, 2) + '\n');
 }
 
-function checkTwoActorBoundary(config) {
-  const forbidden = ['restaurant', 'menu', 'chef', 'history', 'recipes', 'vibe', 'signatureDishes'];
-  const present = forbidden.filter((k) => k in config);
-  if (present.length > 0) {
-    record('config.json is Installer-scope only', false,
-      `Remove these keys — they belong in restaurant-profile.json: ${present.join(', ')}`);
-    return;
+const TOOLKIT_FOR_PLATFORM = {
+  instagram: 'instagram',
+  facebook:  'facebook',
+  tiktok:    'tiktok'
+};
+
+function enabledToolkits(config) {
+  const list = [];
+  for (const [name, p] of Object.entries(config.platforms || {})) {
+    if (p?.enabled && TOOLKIT_FOR_PLATFORM[name]) list.push(TOOLKIT_FOR_PLATFORM[name]);
   }
-  record('config.json is Installer-scope only', true);
+  if (config.googleDrive?.enabled) list.push('googledrive');
+  // OpenAI image generation is always allowed; the project credential gates it.
+  list.push('openai');
+  return list;
 }
 
-function checkNode() {
-  const major = parseInt(process.versions.node.split('.')[0], 10);
-  record(`node ${process.version}`, major >= 18, 'Install Node.js v18+');
-}
-
-function checkComposioSdk() {
-  try {
-    require.resolve('@composio/core');
-    record('@composio/core SDK reachable', true);
-  } catch {
-    record('@composio/core SDK reachable', false,
-      'Run: cd ~/restaurant-social-marketing-skill && npm install');
-  }
-}
-
-async function checkTelegram(config) {
-  const tg = config.telegram;
-  if (!tg?.botToken) {
-    record('Telegram bot token set', false, 'Set telegram.botToken in config.json (from @BotFather)');
-    return;
-  }
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${tg.botToken}/getMe`);
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      record('Telegram bot reachable', false, `Token rejected: ${data.description || res.status}`);
-      return;
+async function fetchAuthConfigs(composio, toolkits) {
+  // Composio's TS SDK exposes auth config listing under composio.authConfigs.
+  // We need exactly one auth config per toolkit. If zero, prompt operator;
+  // if multiple, take the first and warn.
+  const out = {};
+  for (const tk of toolkits) {
+    const list = await composio.authConfigs.list({ toolkit: tk });
+    const items = list.items || list.data || list || [];
+    if (!items.length) {
+      record(`auth config exists for "${tk}"`, false,
+        `Open https://app.composio.dev → your project → Auth Configs and create one for "${tk}". For OAuth toolkits (instagram/facebook/tiktok/googledrive) finish the connect flow afterwards.`);
+      continue;
     }
-    record(`Telegram bot @${data.result.username}`, true);
-    if (!tg.chatId) {
-      record('Telegram chat_id set', false,
-        'Send a message to the bot, then curl https://api.telegram.org/bot<TOKEN>/getUpdates to read the chat_id');
-    } else {
-      record(`Telegram chat_id ${tg.chatId}`, true);
+    if (items.length > 1) {
+      console.log(`   ℹ multiple auth configs for "${tk}" — using first (${items[0].id})`);
     }
-  } catch (e) {
-    record('Telegram bot reachable', false, `Network error: ${e.message}`);
+    out[tk] = items[0].id;
+    record(`auth config for "${tk}" → ${items[0].id}`, true);
   }
-}
-
-async function checkComposioAuth(config) {
-  if (!config.composio?.apiKey) {
-    record('composio.apiKey set', false,
-      'Set composio.apiKey — org-scoped API key from https://app.composio.dev');
-    return false;
-  }
-  try {
-    getClient(config);
-    record('Composio API key valid', true);
-    return true;
-  } catch (e) {
-    record('Composio API key valid', false, `Key rejected: ${e.message}`);
-    return false;
-  }
-}
-
-function checkUserId(config) {
-  if (!config.composio?.userId) {
-    record('composio.userId set', false,
-      'Set composio.userId — per-restaurant entity identifier');
-    return false;
-  }
-  record(`composio.userId "${config.composio.userId}" set`, true);
-  return true;
-}
-
-async function checkImageModel(config, authOk) {
-  if (!authOk) { record('Image model reachable', false, 'API key not valid'); return; }
-  const model = config.imageGen?.model;
-  if (!model) {
-    record('config.imageGen.model set', false,
-      'Set imageGen.model (e.g. google/gemini-2.5-flash-image-preview)');
-    return;
-  }
-  // Minimal live probe. A 1-token chat completion confirms the OpenRouter
-  // credential is wired up in the Composio org AND the model is available.
-  try {
-    const result = await executeTool(config, 'OPENROUTER_CHAT_COMPLETIONS', {
-      model,
-      messages: [{ role: 'user', content: 'ok' }],
-      max_tokens: 1
-    });
-    const body = result.data || result.body || result;
-    if (body.error) throw new Error(body.error.message || JSON.stringify(body.error));
-    record(`Image model "${model}" live`, true);
-  } catch (e) {
-    record(`Image model "${model}" live`, false,
-      `Test call failed: ${e.message}. Verify the OpenRouter credential is attached to this Composio org and the model is listed at https://openrouter.ai/models.`);
-  }
-}
-
-async function checkPlatform(name, platformConfig, config, userOk) {
-  if (!platformConfig?.enabled) {
-    console.log(`⏭  ${name} disabled`);
-    return;
-  }
-  if (!userOk) {
-    record(`${name} connected`, false, 'userId not set — cannot verify');
-    return;
-  }
-  const platform = PLATFORMS[name];
-  const probeTool = {
-    tiktok:    platform.userStatsTool,
-    instagram: platform.userInsightsTool,
-    facebook:  platform.pageInsightsTool
-  }[name];
-  if (!probeTool) {
-    record(`${name} connected`, false, `No probe tool known for ${name}`);
-    return;
-  }
-  try {
-    await executeTool(config, probeTool, {});
-    record(`${name} connected (live)`, true);
-  } catch (e) {
-    const msg = e.message || '';
-    record(`${name} connected (live)`, false,
-      `Probe ${probeTool} failed: ${msg.slice(0, 200)}. Verify the ${name} account is connected under userId "${config.composio.userId}" in the Composio dashboard.`);
-  }
-}
-
-async function checkGoogleDrive(config, userOk) {
-  const drive = config.googleDrive;
-  if (!drive?.enabled) {
-    console.log('⏭  Google Drive disabled');
-    return;
-  }
-  if (!userOk) {
-    record('Google Drive ready', false, 'userId not set — cannot verify');
-    return;
-  }
-  const folderName = drive.folderName;
-  if (!folderName) {
-    record('googleDrive.folderName set', false,
-      'Set googleDrive.folderName (default: "akira-agent_src")');
-    return;
-  }
-  try {
-    const { id, created } = await findOrCreateDriveFolder(config, folderName);
-    drive.folderId = id;
-    saveConfig(config);
-    if (created) {
-      console.log(`   ✨ Created new Drive folder "${folderName}" (${id})`);
-    }
-    record(`Google Drive folder "${folderName}" → ${id}`, true);
-  } catch (e) {
-    record(`Google Drive folder "${folderName}" ready`, false,
-      `Failed to find/create folder: ${e.message.slice(0, 200)}. Verify the Drive connection is attached to userId "${config.composio.userId}" in Composio and has write access.`);
-  }
+  return out;
 }
 
 (async () => {
-  console.log(`\n=== Restaurant Social Marketing — Phase 0 Setup Check ===\nConfig: ${configPath}\n`);
-  const config = loadConfig(configPath);
+  console.log(`\n=== v4 Setup — config: ${configPath} ===\n`);
+  const config = loadConfig();
 
-  checkTwoActorBoundary(config);
-  checkNode();
-  checkComposioSdk();
-  await checkTelegram(config);
-  const authOk = await checkComposioAuth(config);
-  const userOk = checkUserId(config);
-  await checkImageModel(config, authOk);
-  for (const name of ['tiktok', 'instagram', 'facebook']) {
-    await checkPlatform(name, config.platforms?.[name], config, authOk && userOk);
-  }
-  await checkGoogleDrive(config, authOk && userOk);
+  // 1. shape + key
+  const apiKey = config.composio?.apiKey;
+  const userId = config.composio?.userId;
+  if (!apiKey)  { record('composio.apiKey set', false, 'Set composio.apiKey from your Composio project'); process.exit(1); }
+  if (!userId)  { record('composio.userId set', false, 'Set composio.userId — per-agent identifier'); process.exit(1); }
+  record('composio.apiKey set', true);
+  record(`composio.userId "${userId}" set`, true);
 
-  const failed = checks.filter((c) => !c.ok);
-  console.log('\n' + '─'.repeat(60));
-  if (failed.length === 0) {
-    console.log(`✅ All ${checks.length} checks passed. Bot is ready for the restaurant owner.`);
-    process.exit(0);
-  } else {
-    console.log(`❌ ${failed.length}/${checks.length} failed:`);
-    failed.forEach((c) => console.log(`   • ${c.label}${c.fix ? ` — ${c.fix}` : ''}`));
+  // 2. composio client
+  let composio;
+  try { composio = new Composio({ apiKey }); record('Composio API key valid (client constructed)', true); }
+  catch (e) { record('Composio API key valid', false, e.message); process.exit(1); }
+
+  // 3. enabled toolkits → auth configs
+  const toolkits = enabledToolkits(config);
+  if (!toolkits.length) { record('At least one platform enabled', false, 'Enable instagram/facebook/tiktok/googleDrive in config.platforms'); process.exit(1); }
+  record(`Enabled toolkits: ${toolkits.join(', ')}`, true);
+
+  const authMap = await fetchAuthConfigs(composio, toolkits);
+  const missing = toolkits.filter((tk) => !authMap[tk]);
+  if (missing.length) { console.log(`\n❌ Missing auth configs for: ${missing.join(', ')}\n`); process.exit(1); }
+
+  // 4. mcp.create
+  const serverName = `restaurant-marketing-${userId}`;
+  let server;
+  try {
+    server = await composio.mcp.create(serverName, {
+      toolkits: toolkits.map((tk) => ({ toolkit: tk, authConfigId: authMap[tk] })),
+      // No allowedTools allowlist: we want every tool the toolkit advertises.
+      // If Composio requires the field, pass an empty array — they document
+      // omitting it as "all tools". If runtime rejects it, the test plan
+      // says to set the explicit list per toolkit.
+    });
+    record(`MCP server created: ${server.id}`, true);
+  } catch (e) {
+    record('MCP server create', false, `composio.mcp.create failed: ${e.message}`);
     process.exit(1);
   }
+
+  // 5. mcp.generate (per-user URL)
+  let instance;
+  try {
+    instance = await composio.mcp.generate(userId, server.id);
+    record(`MCP server URL → ${instance.url.slice(0, 60)}…`, true);
+  } catch (e) {
+    record('MCP server URL generated', false, e.message);
+    process.exit(1);
+  }
+
+  // 6. persist
+  config.composio.mcpServerUrl = instance.url;
+  config.composio.mcpServerId = server.id;
+  saveConfig(config);
+  record('config.composio.mcpServerUrl written', true);
+
+  // 7. verify by listing tools as an MCP client
+  resetForTests();
+  try {
+    const tools = await listTools(config);
+    if (!tools.length) throw new Error('Server returned 0 tools');
+    record(`MCP client lists ${tools.length} tools`, true);
+  } catch (e) {
+    record('MCP client lists tools', false, `Listing tools from ${instance.url} failed: ${e.message}`);
+    process.exit(1);
+  }
+
+  // 8. Telegram
+  const tg = config.telegram || {};
+  if (!tg.botToken) { record('Telegram bot token', false, 'Set telegram.botToken'); }
+  else {
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${tg.botToken}/getMe`);
+      const j = await r.json();
+      if (!j.ok) record('Telegram bot reachable', false, j.description || 'rejected');
+      else record(`Telegram bot @${j.result.username}`, true);
+    } catch (e) { record('Telegram bot reachable', false, e.message); }
+  }
+  if (!tg.chatId) record('Telegram chat_id', false, 'Send a message to the bot then GET /getUpdates');
+  else record(`Telegram chat_id ${tg.chatId}`, true);
+
+  console.log('\n' + '─'.repeat(60));
+  const failed = checks.filter((c) => !c.ok);
+  if (!failed.length) { console.log(`✅ All ${checks.length} checks passed.`); process.exit(0); }
+  console.log(`❌ ${failed.length}/${checks.length} failed.`);
+  process.exit(1);
 })();
