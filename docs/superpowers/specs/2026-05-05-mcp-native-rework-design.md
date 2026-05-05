@@ -100,24 +100,57 @@ Composio owns every one of these now.
 
 ## Install flow
 
+The install runs **inside the marketing-agent's Docker container**, not on the
+VM host. The host owns: the VM, the Docker engine, and the per-agent volume
+mounts (one volume per agent). Everything else — Node, the repo, Hermes,
+the cron daemon, `social-marketing/` — lives inside the container.
+
+Practically:
+
+- The VM host has a `docker compose` file (or equivalent) that defines the
+  marketing-agent service: image, volume mount for `social-marketing/`,
+  env vars, restart policy.
+- The container image is built from a `Dockerfile` in this repo (Node base
+  image + Hermes + this skill's scripts). `install.sh` runs **inside** the
+  container during build or first boot, not on the host.
+- `~/social-marketing/` from the v3 docs becomes `/data/social-marketing/`
+  inside the container, mounted from a host volume named after the agent
+  (e.g. `/var/lib/akira/<company>/marketing/`).
+- The MCP server URL written to `config.json` is reached from inside the
+  container over outbound HTTPS — no inbound port, no host networking.
+
+Steps (inside the container, or scripted at image build):
+
 1. Clone repo, `npm install` — unchanged.
 2. Copy skills into `~/.hermes/skills/social-media/` — unchanged.
-3. Scaffold `~/social-marketing/` working directory — unchanged.
+3. Scaffold `/data/social-marketing/` working directory — unchanged in shape,
+   path moves under the volume mount.
 4. Fill `config.json` — **shrinks to**: Telegram bot token + chat ID, Composio
    API key + userId, and which platforms are enabled. That is all.
 5. Operator goes to the Composio dashboard once and connects OAuth for each
    enabled platform under the company project (Instagram, Facebook, TikTok,
    Google Drive). The OpenAI credential for gpt-image-2 is also added there.
-6. Run `node scripts/setup.js --config ~/social-marketing/config.json`. This:
+   This is a host-side / browser-side action; no container involvement.
+6. Inside the container, run `node scripts/setup.js --config /data/social-marketing/config.json`. This:
    - Validates the Composio API key.
    - Verifies OAuth is connected for each enabled platform.
    - Calls `composio.mcp.create()` with the enabled toolkits' allowlists.
    - Writes the returned MCP server URL into `config.json` under `composio.mcpServerUrl`.
    - Confirms Hermes can connect to the URL and list tools.
-7. Start Hermes; hand the Telegram bot to the owner.
+7. Start Hermes (the container's default command); hand the Telegram bot to the owner.
 
 The 17-digit Instagram Business Account ID, the Facebook Page ID, the imgbb
 signup, and the OpenRouter key are all gone from the install path.
+
+### Docker artifacts in scope for this rework
+
+- `Dockerfile` at repo root — Node base image, copies repo, installs deps,
+  installs Hermes, sets the entrypoint to start Hermes + the cron daemon.
+- `docker-compose.yml` (or a sample one in `templates/`) showing how an
+  operator wires the volume, env, and restart policy on the host.
+- `install.sh` is split: the host-side part (clone + `docker compose up`) stays
+  small; the in-container part is what runs Steps 1–7 above and is invoked by
+  the Dockerfile/entrypoint.
 
 ## Files affected
 
@@ -142,11 +175,18 @@ signup, and the OpenRouter key are all gone from the install path.
 - `scripts/aggregator.js`
 - `scripts/self-improve.js`
 
+**New:**
+
+- `Dockerfile` at repo root.
+- `templates/docker-compose.yml` — sample compose file for operators.
+
 **Update:**
 
 - `templates/config.template.json`
-- `README.md`, `INSTALLER.md`, `SETUP.md`
-- Any `skills/*/SKILL.md` reference to SDK calls or hardcoded IDs
+- `install.sh` — split into host-side (clone + compose up) and in-container parts.
+- `README.md`, `INSTALLER.md`, `SETUP.md` — rewritten around Docker-first install,
+  paths under `/data/social-marketing/` instead of `~/social-marketing/`.
+- Any `skills/*/SKILL.md` reference to SDK calls or hardcoded IDs.
 
 **Skip:**
 
