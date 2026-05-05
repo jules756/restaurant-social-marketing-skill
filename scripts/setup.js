@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Composio } = require('@composio/core');
-const { listTools, resetForTests } = require('./mcp-client');
+const { listTools, resetCache } = require('./mcp-client');
 
 const args = process.argv.slice(2);
 const getArg = (n) => { const i = args.indexOf(`--${n}`); return i !== -1 ? args[i + 1] : null; };
@@ -64,10 +64,14 @@ async function fetchAuthConfigs(composio, toolkits) {
   const out = {};
   for (const tk of toolkits) {
     const list = await composio.authConfigs.list({ toolkit: tk });
-    const items = list.items || list.data || list || [];
+    const items = Array.isArray(list?.items) ? list.items : [];
     if (!items.length) {
+      const isOAuth = ['instagram', 'facebook', 'tiktok', 'googledrive'].includes(tk);
+      const hint = isOAuth
+        ? `For OAuth toolkits, finish the connect flow after creating the auth config.`
+        : `For API-key toolkits like openai, paste the key into the auth config — no OAuth flow needed.`;
       record(`auth config exists for "${tk}"`, false,
-        `Open https://app.composio.dev → your project → Auth Configs and create one for "${tk}". For OAuth toolkits (instagram/facebook/tiktok/googledrive) finish the connect flow afterwards.`);
+        `Open https://app.composio.dev → your project → Auth Configs and create one for "${tk}". ${hint}`);
       continue;
     }
     if (items.length > 1) {
@@ -139,13 +143,13 @@ async function fetchAuthConfigs(composio, toolkits) {
   record('config.composio.mcpServerUrl written', true);
 
   // 7. verify by listing tools as an MCP client
-  resetForTests();
+  resetCache();
   try {
     const tools = await listTools(config);
     if (!tools.length) throw new Error('Server returned 0 tools');
     record(`MCP client lists ${tools.length} tools`, true);
   } catch (e) {
-    record('MCP client lists tools', false, `Listing tools from ${instance.url} failed: ${e.message}`);
+    record('MCP client lists tools', false, `Listing tools from ${instance.url.slice(0, 60)}… failed: ${e.message}`);
     process.exit(1);
   }
 

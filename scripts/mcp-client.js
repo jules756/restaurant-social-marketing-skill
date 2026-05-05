@@ -76,9 +76,13 @@ async function callTool(config, name, args = {}) {
   return res;
 }
 
-function resetForTests() {
+function resetCache() {
   _connectPromise = null;
   _toolsCache = null;
 }
 
-module.exports = { loadConfig, connectMcp, listTools, findToolByPattern, callTool, resetForTests };
+// Back-compat alias for the test that imports the old name. Production
+// code (setup.js) uses `resetCache` for clarity.
+const resetForTests = resetCache;
+
+module.exports = { loadConfig, connectMcp, listTools, findToolByPattern, callTool, resetCache, resetForTests };
