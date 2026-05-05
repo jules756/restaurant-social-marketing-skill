@@ -135,6 +135,11 @@ if (!dir) fail('--dir is required (path to the post directory)');
     //
     // 1. Create one CAROUSEL_ITEM container per slide, passing image_file
     //    as the absolute path. Composio handles hosting server-side.
+    //
+    // ig_user_id is intentionally omitted — Composio MCP resolves it from
+    // the OAuth connection. If IG ever rejects with "ig_user_id required",
+    // look it up via findToolByPattern(/INSTAGRAM.*USER.*ME|USER_INFO/) and
+    // cache the id on config.platforms.instagram.igUserId.
     const childIds = [];
     for (const slide of slides) {
       const absPath = path.resolve(slide);
