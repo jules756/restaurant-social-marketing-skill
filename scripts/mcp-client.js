@@ -14,7 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 
-let _client = null;
+let _connectPromise = null;
 let _toolsCache = null;
 
 function loadConfig(configPath) {
@@ -23,23 +23,25 @@ function loadConfig(configPath) {
   return JSON.parse(fs.readFileSync(resolved, 'utf-8'));
 }
 
-async function connectMcp(config) {
-  if (_client) return _client;
+function connectMcp(config) {
+  if (_connectPromise) return _connectPromise;
   const url = config.composio?.mcpServerUrl;
   const apiKey = config.composio?.apiKey;
-  if (!url) throw new Error('config.composio.mcpServerUrl is required. Run `node scripts/setup.js --config <path>` first.');
-  if (!apiKey) throw new Error('config.composio.apiKey is required.');
+  if (!url) return Promise.reject(new Error('config.composio.mcpServerUrl is required. Run `node scripts/setup.js --config <path>` first.'));
+  if (!apiKey) return Promise.reject(new Error('config.composio.apiKey is required. Set it in config.json or run `node scripts/setup.js --config <path>` first.'));
 
-  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
-  const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  _connectPromise = (async () => {
+    const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+    const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 
-  const transport = new StreamableHTTPClientTransport(new URL(url), {
-    requestInit: { headers: { 'x-api-key': apiKey } }
-  });
-  const client = new Client({ name: 'restaurant-marketing', version: '4.0.0' }, { capabilities: {} });
-  await client.connect(transport);
-  _client = client;
-  return _client;
+    const transport = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: { headers: { 'x-api-key': apiKey } }
+    });
+    const client = new Client({ name: 'restaurant-marketing', version: '4.0.0' }, { capabilities: {} });
+    await client.connect(transport);
+    return client;
+  })();
+  return _connectPromise;
 }
 
 async function listTools(config) {
@@ -64,14 +66,18 @@ async function callTool(config, name, args = {}) {
   if (Array.isArray(res?.content)) {
     const text = res.content.find((c) => c.type === 'text')?.text;
     if (text) {
-      try { return JSON.parse(text); } catch { return { raw: text }; }
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error(`Tool ${name} returned non-JSON text: ${text.slice(0, 200)}`);
+      }
     }
   }
   return res;
 }
 
 function resetForTests() {
-  _client = null;
+  _connectPromise = null;
   _toolsCache = null;
 }
 
