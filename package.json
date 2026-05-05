@@ -1,19 +1,19 @@
 {
   "name": "restaurant-social-marketing-skill",
-  "version": "3.0.0",
+  "version": "4.0.0-alpha.1",
   "private": true,
-  "description": "Hermes skill suite for restaurant social media marketing. Scripts call Composio REST for cron and the @composio/core SDK for provisioning lookups.",
-  "engines": {
-    "node": ">=18"
-  },
+  "description": "Hermes skill suite for restaurant social media marketing. v4: per-agent Composio MCP server + gpt-image-2.",
+  "engines": { "node": ">=18" },
   "dependencies": {
-    "@composio/core": "^0.1.0"
+    "@composio/core": "^0.6.10",
+    "@modelcontextprotocol/sdk": "^1.0.0"
   },
   "optionalDependencies": {
     "canvas": "^2.11.2"
   },
   "scripts": {
-    "setup": "node scripts/setup.js --config $HOME/social-marketing/config.json",
-    "syntax-check": "for f in scripts/*.js; do node -c \"$f\" || exit 1; done"
+    "setup": "node scripts/setup.js --config /data/social-marketing/config.json",
+    "syntax-check": "for f in scripts/*.js; do node -c \"$f\" || exit 1; done",
+    "test": "node tests/test-mcp-client.js"
   }
 }
