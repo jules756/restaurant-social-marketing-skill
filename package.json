@@ -12,7 +12,7 @@
     "canvas": "^2.11.2"
   },
   "scripts": {
-    "setup": "node scripts/setup.js --config /data/social-marketing/config.json",
+    "setup": "node scripts/setup.js --config ${SOCIAL_MARKETING_CONFIG:-/data/social-marketing/config.json}",
     "syntax-check": "for f in scripts/*.js; do node -c \"$f\" || exit 1; done",
     "test": "node tests/test-mcp-client.js"
   }
