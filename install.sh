@@ -51,14 +51,48 @@ else
   echo "  ✓ $CONFIG already exists — left untouched"
 fi
 
-# 3. SOUL.md (Hermes persona) — copy to ~/.hermes/ if Hermes is using that path
+# 3. Install into Hermes home (created by hermes-install).
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-if [[ -d "$HERMES_HOME" ]]; then
-  cp "$SKILL_DIR/templates/SOUL.md" "$HERMES_HOME/SOUL.md"
-  echo "  ✓ installed SOUL.md → $HERMES_HOME/SOUL.md"
-else
-  echo "  ⚠ $HERMES_HOME not found — skipping SOUL.md install. Set HERMES_HOME and re-run if needed."
+if [[ ! -d "$HERMES_HOME" ]]; then
+  echo "✗ $HERMES_HOME not found. Install Hermes first via the hermes-install repo."
+  exit 1
 fi
+
+# 3a. SOUL.md → Hermes persona file.
+cp "$SKILL_DIR/templates/SOUL.md" "$HERMES_HOME/SOUL.md"
+echo "  ✓ installed SOUL.md → $HERMES_HOME/SOUL.md"
+
+# 3b. Skill folders → $HERMES_HOME/skills/<skill>/ (where Hermes loads from).
+mkdir -p "$HERMES_HOME/skills"
+SKILL_NAMES=(restaurant-marketing content-preparation marketing-intelligence \
+             food-photography-hermes social-media-seo-hermes social-trend-monitor-hermes xurl)
+for skill in "${SKILL_NAMES[@]}"; do
+  if [[ -d "$SKILL_DIR/$skill" ]]; then
+    rm -rf "$HERMES_HOME/skills/$skill"
+    cp -r "$SKILL_DIR/$skill" "$HERMES_HOME/skills/$skill"
+  fi
+done
+echo "  ✓ installed ${#SKILL_NAMES[@]} skill folders → $HERMES_HOME/skills/"
+
+# 3c. On-boot hook so Hermes container picks up this skill on every restart.
+mkdir -p "$HERMES_HOME/hooks/on-boot"
+cat > "$HERMES_HOME/hooks/on-boot/restaurant-social-marketing-skill.sh" <<'HOOK'
+#!/bin/bash
+# Auto-installed by restaurant-social-marketing-skill/install.sh.
+# Runs inside the Hermes container on every boot. Idempotent — only acts
+# if the per-agent MCP server URL is missing.
+set -euo pipefail
+CONFIG="${HOST_HOME:-/host-home}/social-marketing/config.json"
+SKILL_REPO="${HOST_HOME:-/host-home}/restaurant-social-marketing-skill"
+[[ -f "$CONFIG" ]] || { echo "[restaurant-marketing] no $CONFIG yet — skipping"; exit 0; }
+if [[ -z "$(jq -r '.composio.mcpServerUrl // empty' "$CONFIG")" ]]; then
+  echo "[restaurant-marketing] provisioning Composio MCP server"
+  node "$SKILL_REPO/scripts/setup.js" --config "$CONFIG" || \
+    echo "[restaurant-marketing] setup.js failed — fix config.json then restart Hermes"
+fi
+HOOK
+chmod +x "$HERMES_HOME/hooks/on-boot/restaurant-social-marketing-skill.sh"
+echo "  ✓ installed on-boot hook"
 
 # 4. npm deps for the scripts
 if command -v npm >/dev/null 2>&1; then
@@ -95,12 +129,15 @@ Next steps:
      - platforms.{instagram,tiktok,facebook}.enabled  (true for the ones you'll post to)
      - googleDrive.enabled + folderName  (if syncing photos from Drive)
 
-  2. Run setup to create the per-agent Composio MCP server:
-     SOCIAL_MARKETING_CONFIG="$CONFIG" npm run --prefix "$SKILL_DIR" setup
+  2. Restart Hermes so it picks up SOUL.md and the skill folders:
+       docker restart hermes
 
-  3. Start (or restart) Hermes. It will load this skill and SOUL.md automatically.
+     The on-boot hook will auto-run setup.js to provision the Composio
+     MCP server (using the keys you put in config.json). Tail the logs
+     to confirm:
+       docker logs -f hermes
 
-  4. Message your Telegram bot. Hermes will run Phase 1 onboarding (7 questions).
+  3. Message your Telegram bot. Hermes will run Phase 1 onboarding (7 questions).
 
 To uninstall the cron jobs (data is kept):
   bash $SKILL_DIR/install.sh --uninstall
