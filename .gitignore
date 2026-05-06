@@ -1,0 +1,5 @@
+config.json
+posts/**/slide-*.png
+posts/**/slide-*.jpg
+node_modules
+*.log
