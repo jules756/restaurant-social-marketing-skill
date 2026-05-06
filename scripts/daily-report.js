@@ -20,7 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeTool, loadConfig } = require('./composio-helpers');
+const { callTool, loadConfig } = require('./mcp-client');
 
 const args = process.argv.slice(2);
 const getArg = (name, def) => {
@@ -89,14 +89,15 @@ async function sendTelegram(text) {
 async function pullInstagram() {
   const igConfig = config.platforms?.instagram;
   if (!igConfig?.enabled) return { enabled: false };
-  const igUserId = igConfig.igUserId;
-  if (!igUserId) return { enabled: true, error: 'igUserId missing' };
+
+  // ig_user_id is intentionally omitted — Composio MCP resolves it from
+  // the OAuth connection. See post-to-instagram.js for the contingency
+  // path if IG ever rejects with "ig_user_id required".
 
   // 1. List recent media
   let media;
   try {
-    media = await executeTool(config, 'INSTAGRAM_GET_IG_USER_MEDIA', {
-      ig_user_id: igUserId,
+    media = await callTool(config, 'INSTAGRAM_GET_IG_USER_MEDIA', {
       fields: 'id,caption,timestamp,media_type,permalink',
       limit: Math.max(days * 2, 14)
     });
@@ -117,7 +118,7 @@ async function pullInstagram() {
   for (const post of recent) {
     let insights = {};
     try {
-      const r = await executeTool(config, 'INSTAGRAM_GET_IG_MEDIA_INSIGHTS', {
+      const r = await callTool(config, 'INSTAGRAM_GET_IG_MEDIA_INSIGHTS', {
         ig_media_id: post.id,
         metric: 'impressions,reach,likes,comments,saved,shares'
       });

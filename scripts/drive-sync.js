@@ -1,26 +1,20 @@
 #!/usr/bin/env node
 /**
- * Find the restaurant's Drive folder by name (via Composio) and save the
- * folder's Drive ID to config.json. That's the ONLY job of this script.
- *
- * The AI agent (Hermes, called via Composio Drive tools at runtime) does
- * all actual reading / downloading / classifying of photos on demand.
- * Drive is the source of truth — no local cache, no sync of file bytes,
- * no stale state.
+ * Verify the restaurant's Drive folder exists by name (via Composio MCP).
+ * Creates it if missing. The folder ID is NOT cached in config — Composio
+ * MCP resolves the folder from the OAuth connection on each tool call,
+ * so callers can use the folder name directly.
  *
  * Usage:
  *   node drive-sync.js --config <config.json>
  *
  * Reads:  config.googleDrive.folderName (default: "akira-agent_src").
- * Writes: config.googleDrive.folderId (the Drive folder ID).
  *
- * If the folder doesn't exist under the connected Drive account, creates
- * it. Idempotent — re-runs update the saved ID if it changed.
+ * Idempotent — re-runs are no-ops once the folder exists.
  */
 
-const fs = require('fs');
 const path = require('path');
-const { findDriveFolderByName, findOrCreateDriveFolder, loadConfig } = require('./composio-helpers');
+const { callTool, loadConfig } = require('./mcp-client');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -45,29 +39,29 @@ if (!drive.folderName) {
   process.exit(1);
 }
 
+async function findFolder(folderName) {
+  const escaped = folderName.replace(/'/g, "\\'");
+  const q = `mimeType='application/vnd.google-apps.folder' and name='${escaped}' and trashed=false`;
+  const result = await callTool(config, 'GOOGLEDRIVE_LIST_FILES', { q, page_size: 10 });
+  const files = result.data?.files || result.files || result.data || [];
+  return Array.isArray(files) ? files.find((f) => (f.name || f.title) === folderName) : null;
+}
+
 (async () => {
   console.log(`Searching Drive for folder "${drive.folderName}" …`);
-  let folderId = await findDriveFolderByName(config, drive.folderName);
+  let folder = await findFolder(drive.folderName);
   let created = false;
-  if (!folderId) {
-    const result = await findOrCreateDriveFolder(config, drive.folderName);
-    folderId = result.id;
-    created = result.created;
+  if (!folder) {
+    const result = await callTool(config, 'GOOGLEDRIVE_CREATE_FOLDER', { name: drive.folderName });
+    const id = result.data?.id || result.id || result.data?.file?.id;
+    if (!id) throw new Error(`createFolder("${drive.folderName}") returned no id`);
+    folder = { id, name: drive.folderName };
+    created = true;
   }
-
-  if (drive.folderId === folderId) {
-    console.log(`  ✅ folderId already current: ${folderId}`);
-  } else {
-    drive.folderId = folderId;
-    const full = loadConfig(configPath);
-    full.googleDrive = drive;
-    fs.writeFileSync(path.resolve(configPath), JSON.stringify(full, null, 2) + '\n');
-    console.log(`  ✅ saved config.googleDrive.folderId = ${folderId}${created ? ' (folder newly created)' : ''}`);
-  }
-
+  console.log(`  ✅ folder "${drive.folderName}" present${created ? ' (newly created)' : ''} — id ${folder.id}`);
   console.log(
-    `\nDone. AI agents can now query this folder via Composio tools ` +
-    `(GOOGLEDRIVE_LIST_FILES with folder_id=${folderId}) to list subfolders / files ` +
-    `on demand. No local cache is maintained by this script.`
+    `\nDone. Hermes can list / read this folder via Composio MCP tools ` +
+    `(GOOGLEDRIVE_LIST_FILES, GOOGLEDRIVE_DOWNLOAD_FILE) by folder name on demand. ` +
+    `No id is cached in config; Composio resolves it server-side.`
   );
 })();

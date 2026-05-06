@@ -29,7 +29,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeTool, executeProxy, uploadFile, loadConfig, PLATFORMS } = require('./composio-helpers');
+const { callTool, loadConfig, findToolByPattern } = require('./mcp-client');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -71,17 +71,16 @@ if (!dir) fail('--dir is required');
     const captionPath = path.join(postDir, 'caption.txt');
     const caption = fs.existsSync(captionPath) ? fs.readFileSync(captionPath, 'utf-8').trim() : '';
 
-    const fb = PLATFORMS.facebook;
     const useCarousel = slides.length > 1 && !single;
 
     if (dryRun) {
       if (useCarousel) {
         slides.forEach((_, i) =>
-          dryLog(`upload_photo_${i + 1}_unpublished`, { tool: fb.createPhotoTool, published: false })
+          dryLog(`upload_photo_${i + 1}_unpublished`, { tool: 'FACEBOOK_CREATE_PHOTO_POST', published: false })
         );
         dryLog('create_parent_post', { message_preview: caption.slice(0, 80), attached_media_count: slides.length });
       } else {
-        dryLog('upload_single_photo', { tool: fb.createPhotoTool, published: true });
+        dryLog('upload_single_photo', { tool: 'FACEBOOK_CREATE_PHOTO_POST', published: true });
       }
       console.log(JSON.stringify({
         ok: true,
@@ -93,20 +92,21 @@ if (!dir) fail('--dir is required');
       return;
     }
 
+    // Composio MCP resolves the FB Page from the OAuth connection — no
+    // pageId lookup, no direct Graph API hit. The image_file path pattern
+    // (proven on Instagram) lets Composio host the bytes server-side.
     if (!useCarousel) {
       // Single-image mode
-      const hero = slides[0];
-      const key = await uploadFile(config, fb.toolkit, fb.createPhotoTool, hero, 'image/png');
-
+      const hero = path.resolve(slides[0]);
       const payloads = [
-        { image_url: key, message: caption },
-        { photo_url: key, caption },
-        { url: key, caption }
+        { image_file: hero, message: caption },
+        { photo_url: hero, caption },
+        { url: hero, caption }
       ];
       let result, lastError;
       for (const payload of payloads) {
         try {
-          result = await executeTool(config, fb.createPhotoTool, payload);
+          result = await callTool(config, 'FACEBOOK_CREATE_PHOTO_POST', payload);
           if (result && !result.error) break;
         } catch (e) { lastError = e; }
       }
@@ -129,19 +129,19 @@ if (!dir) fail('--dir is required');
     }
 
     // Multi-photo carousel
-    // Step 1: Upload each image + create unpublished photo
+    // Step 1: Upload each image as an unpublished photo.
     const photoIds = [];
     for (const slide of slides) {
-      const key = await uploadFile(config, fb.toolkit, fb.createPhotoTool, slide, 'image/png');
+      const absPath = path.resolve(slide);
       const payloads = [
-        { image_url: key, published: false },
-        { photo_url: key, published: false },
-        { url: key, published: false }
+        { image_file: absPath, published: false },
+        { photo_url: absPath, published: false },
+        { url: absPath, published: false }
       ];
       let result, lastError;
       for (const payload of payloads) {
         try {
-          result = await executeTool(config, fb.createPhotoTool, payload);
+          result = await callTool(config, 'FACEBOOK_CREATE_PHOTO_POST', payload);
           if (result && !result.error) break;
         } catch (e) { lastError = e; }
       }
@@ -154,26 +154,25 @@ if (!dir) fail('--dir is required');
     }
 
     // Step 2: Create parent post with attached_media referencing the unpublished photos.
-    // Facebook Graph expects attached_media as a JSON array of {media_fbid: <id>}.
+    // Composio MCP advertises a feed-post tool that accepts the media_fbid
+    // array directly; it resolves the FB Page from the OAuth connection.
+    // The multi-shape retry mirrors the v3 fallback behavior.
     const attachedMedia = photoIds.map((id) => ({ media_fbid: id }));
-
-    // There isn't always a dedicated Composio tool for multi-photo parent
-    // posts; fall back to executeProxy against /me/feed or /{page-id}/feed.
-    const pageId = config.platforms?.facebook?.pageId || 'me';
-    const endpoint = `https://graph.facebook.com/v18.0/${pageId}/feed`;
-
-    let feedResult;
-    try {
-      feedResult = await executeProxy(config, endpoint, 'POST', {
-        message: caption,
-        attached_media: attachedMedia
-      });
-    } catch (e) {
-      throw new Error(`Facebook parent feed post failed: ${e.message}`);
+    const feedPayloads = [
+      { message: caption, attached_media: attachedMedia },
+      { caption, attached_media: attachedMedia }
+    ];
+    let feedResult, feedLastError;
+    for (const payload of feedPayloads) {
+      try {
+        feedResult = await callTool(config, 'FACEBOOK_CREATE_FEED_POST', payload);
+        if (feedResult && !feedResult.error) break;
+      } catch (e) { feedLastError = e; }
     }
-    const body = feedResult.data || feedResult.body || feedResult;
-    if (body.error) throw new Error(`Facebook feed error: ${body.error.message || JSON.stringify(body.error)}`);
-
+    if (!feedResult || feedResult.error) {
+      throw new Error(`Facebook parent feed post failed: ${feedLastError?.message || feedResult?.error || 'unknown'}`);
+    }
+    const body = feedResult.data || feedResult;
     const postId = body.id || body.post_id;
 
     console.log(JSON.stringify({

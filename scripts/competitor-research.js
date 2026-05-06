@@ -13,7 +13,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadConfig } = require('./composio-helpers');
+const { loadConfig } = require('./mcp-client');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {

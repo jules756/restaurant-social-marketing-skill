@@ -19,7 +19,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeTool, uploadFile, loadConfig, PLATFORMS } = require('./composio-helpers');
+const { callTool, loadConfig, findToolByPattern } = require('./mcp-client');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -60,11 +60,9 @@ if (!dir) fail('--dir is required');
     const captionPath = path.join(postDir, 'caption.txt');
     const caption = fs.existsSync(captionPath) ? fs.readFileSync(captionPath, 'utf-8').trim() : '';
 
-    const tt = PLATFORMS.tiktok;
-
     if (dryRun) {
       slides.forEach((s) => dryLog('upload_slide', path.basename(s)));
-      dryLog('post_as_draft', { tool: tt.postPhotoTool, privacy: 'SELF_ONLY', slide_count: slides.length, caption_preview: caption.slice(0, 80) });
+      dryLog('post_as_draft', { tool: 'TIKTOK_POST_PHOTO', privacy: 'SELF_ONLY', slide_count: slides.length, caption_preview: caption.slice(0, 80) });
       console.log(JSON.stringify({
         ok: true,
         platform: 'tiktok',
@@ -75,26 +73,25 @@ if (!dir) fail('--dir is required');
       return;
     }
 
-    // Upload each slide
-    const fileKeys = [];
-    for (const slide of slides) {
-      const key = await uploadFile(config, tt.toolkit, tt.postPhotoTool, slide, 'image/png');
-      fileKeys.push(key);
-    }
+    // Pass each slide as an absolute file path. Composio MCP hosts the
+    // file server-side and gives TikTok a URL it trusts (same pattern
+    // as Instagram's image_file). No client-side upload step.
+    const slidePaths = slides.map((s) => path.resolve(s));
 
-    // Post as draft — TIKTOK_POST_PHOTO typically accepts an array of image
-    // URLs/keys + caption + a privacy/draft flag. Different Composio tool
-    // versions expose this under different keys, so try a few shapes.
+    // TIKTOK_POST_PHOTO accepts the file paths + caption + draft privacy.
+    // Different tool versions have used slightly different field names; the
+    // multi-shape retry mirrors the v3 behavior. With MCP discovery in
+    // place, future cleanup can pick a single shape from the tool schema.
     const payloads = [
-      { photo_images: fileKeys, post_info: { title: caption, privacy_level: 'SELF_ONLY' } },
-      { images: fileKeys, caption, privacy: 'SELF_ONLY', is_draft: true },
-      { image_urls: fileKeys, title: caption, privacy_level: 'SELF_ONLY' }
+      { photo_images: slidePaths, post_info: { title: caption, privacy_level: 'SELF_ONLY' } },
+      { images: slidePaths, caption, privacy: 'SELF_ONLY', is_draft: true },
+      { image_urls: slidePaths, title: caption, privacy_level: 'SELF_ONLY' }
     ];
 
     let lastError, result;
     for (const payload of payloads) {
       try {
-        result = await executeTool(config, tt.postPhotoTool, payload);
+        result = await callTool(config, 'TIKTOK_POST_PHOTO', payload);
         if (result && !result.error) break;
       } catch (e) {
         lastError = e;
