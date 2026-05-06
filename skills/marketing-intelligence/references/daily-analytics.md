@@ -8,7 +8,7 @@
 | Google Analytics | GA4 Data API (if `config.analytics.googleAnalytics.enabled`) | Optional |
 | Booking data | Depends on `config.analytics.bookingTracking.method` | Always |
 
-### Platform tool slugs (resolved by `composio-helpers.js`)
+### Platform tool slugs (called via `mcp-client.js`)
 
 | Platform | Tools called |
 |---|---|

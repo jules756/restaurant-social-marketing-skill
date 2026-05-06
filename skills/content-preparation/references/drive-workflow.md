@@ -23,7 +23,7 @@ node ~/restaurant-social-marketing-skill/scripts/drive-inventory.js --config ~/s
 ```
 
 What it does:
-1. For each photo in `drive-index.json` without a `category`, sends it to the configured vision model via OpenRouter (using `config.imageGen.openrouterApiKey` or env).
+1. For each photo in `drive-index.json` without a `category`, sends it to a vision tool over Composio MCP (the OpenAI credential lives in the Composio project — no key on the VM).
 2. Classifies each into `dish` / `ambiance` / `kitchen` / `exterior`, extracts `dishName` when the menu matches, scores quality (`high|medium|low`).
 3. Moves each file from `unsorted/` to the matching subdirectory.
 4. Writes the aggregated inventory to `~/social-marketing/photo-inventory.json`.

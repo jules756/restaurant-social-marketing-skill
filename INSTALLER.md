@@ -1,91 +1,54 @@
-# Installer Brief
+# Installer Brief — v4
 
-**If you are an AI agent running the install on a client VM, read this file to completion before asking the human anything.** Restaurant content (name, cuisine, location, booking URL, menu) comes from the owner via Telegram later — never ask.
+**If you are an AI agent running the install on a host VM, read this file to completion before asking the human anything.** Restaurant content (name, cuisine, location, booking URL, menu) comes from the owner via Telegram later — never ask.
+
+v4 is **Docker-first**. The install runs inside a per-agent container; you only touch the host enough to bring the container up.
 
 ---
 
-## Your Scope (Four Items)
+## Your Scope (Three Items)
 
 | # | Item                           | Source                                                            |
 |---|--------------------------------|-------------------------------------------------------------------|
 | 1 | Telegram `botToken` + `chatId` | Ask the human. Token from @BotFather; chatId via `getUpdates`.    |
-| 2 | `composio.apiKey`              | Ask the human. Org-scoped API key (`ak_…`) from https://app.composio.dev. One Composio Organization per restaurant client — the key is already scoped to that org. |
-| 3 | `composio.userId`              | Ask the human. **Per-restaurant entity identifier** within that org — NOT the operator's personal Composio account ID. All OAuth connections must be created under THIS entity in the Composio dashboard. If connected via Composio dashboard's Test button, the userId is typically `pg-test-<something>`. Mismatch → *"No connected accounts found"*. |
-| 4 | `platforms.instagram.igUserId` | Required for Instagram. **Instagram Business Account ID** — a 17-digit number starting `17841…`. Not the Composio userId. Find in Meta Business Suite → Settings → Instagram accounts, or via Graph API Explorer: `me/accounts?fields=instagram_business_account`. Required by Instagram's Graph API; not auto-resolved by Composio. |
+| 2 | `composio.apiKey`              | Ask the human. Project-scoped API key from https://app.composio.dev. One Composio project per company. |
+| 3 | `composio.userId`              | Ask the human. **Per-agent identifier** (e.g. `rodolfino-marketing`). Composio uses it to scope the MCP server. |
 
 **That is the complete list.** Plus which platforms are enabled (booleans). Nothing else.
 
 ## What You DO NOT Ask
 
-- ❌ Restaurant name / cuisine / location / booking URL / menu / dishes / vibe / guest type.
-- ❌ OpenRouter API key — OpenRouter goes through the Composio org now.
-- ❌ Per-platform `connected_account_id` / `ca_…` values — SDK resolves from userId.
-- ❌ Drive folder ID — auto-discovered from `folderName` at first use.
-- ❌ MCP server URL or `ck_…` key — MCP is not used. Everything goes through the SDK.
+- Restaurant name / cuisine / location / booking URL / menu / dishes / vibe / guest type.
+- OpenAI / OpenRouter API keys — both live in the Composio project, not on the VM.
+- Instagram Business Account ID, Facebook Page ID, TikTok user id — Composio resolves these from the OAuth connection.
+- Drive folder ID — Composio resolves it by name on each call.
+- MCP server URL — `setup.js` writes it via `composio.mcp.create()`.
+- imgbb / image-host keys — gone in v4.
 
 ---
 
 ## Installation Sequence
 
-### Step 1 — Clone the repo
+### Step 1 — Run the host-side installer
 
 ```bash
-git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/restaurant-social-marketing-skill
-cd ~/restaurant-social-marketing-skill && git pull origin main
+COMPANY=<short-id> bash install.sh
 ```
 
-### Step 2 — Copy skills into Hermes (under `social-media/` category)
+Where `<short-id>` is a slug for the company (e.g. `rodolfino`). That single command:
+1. Clones the repo to `$HOME/restaurant-social-marketing-skill` (if not already there).
+2. Builds the Docker image `restaurant-marketing:v4-alpha`.
+3. Creates `/var/lib/akira/<company>/marketing/` as the host volume.
+4. Materializes a per-agent compose file at `/opt/agents/<company>-marketing/docker-compose.yml`.
+5. Brings the container up.
 
-```bash
-mkdir -p ~/.hermes/skills/social-media
-cp -r ~/restaurant-social-marketing-skill/skills/* ~/.hermes/skills/social-media/
-cp -r ~/restaurant-social-marketing-skill/adapted-skills/* ~/.hermes/skills/social-media/
-```
+The container's first boot scaffolds `/data/social-marketing/` and copies the config template. It then sleeps so the operator can edit the config — it does **not** crash-loop.
 
-**Do not** copy `docs/`. Verify six skill dirs:
+### Step 2 — Edit `config.json`
 
-```bash
-ls ~/.hermes/skills/social-media/ | grep -cE '(restaurant-marketing|content-preparation|marketing-intelligence|food-photography-hermes|social-media-seo-hermes|social-trend-monitor-hermes)'
-```
+The template lives at `/var/lib/akira/<company>/marketing/social-marketing/config.json` on the host (mounted to `/data/social-marketing/config.json` inside the container).
 
-Should print `6`.
-
-### Step 3 — Install SDK dependencies
-
-```bash
-cd ~/restaurant-social-marketing-skill && npm install
-```
-
-Verify:
-
-```bash
-cd ~/restaurant-social-marketing-skill && node -e "console.log(require('@composio/core').Composio)"
-```
-
-Should print a function, not throw.
-
-### Step 3b — Install SOUL.md (Hermes persona override)
-
-Without this, Hermes defaults to a general-assistant voice and will do meta-commentary on Telegram ("let me run the validator", "want me to debug?") instead of acting as the restaurant's marketing partner.
-
-```bash
-cp ~/restaurant-social-marketing-skill/templates/SOUL.md ~/.hermes/SOUL.md
-```
-
-`install.sh` does this automatically — included here in case of manual install.
-
-### Step 4 — Scaffold the client working directory
-
-```bash
-mkdir -p ~/social-marketing/photos/{dishes,ambiance,kitchen,exterior,unsorted}
-mkdir -p ~/social-marketing/{posts,knowledge-base}
-mkdir -p ~/social-marketing/reports/{trend-reports,competitor}
-cp ~/restaurant-social-marketing-skill/templates/config.template.json ~/social-marketing/config.json
-```
-
-### Step 5 — Fill in `~/social-marketing/config.json`
-
-Only these fields. Leave everything else at template defaults.
+Fill exactly these fields:
 
 ```json
 {
@@ -94,12 +57,12 @@ Only these fields. Leave everything else at template defaults.
     "chatId":   "<owner's chat id>"
   },
   "composio": {
-    "apiKey":  "<ak_… org-scoped key>",
-    "userId":  "<per-restaurant entity id>"
+    "apiKey": "<project API key>",
+    "userId": "<per-agent id>"
   },
   "platforms": {
-    "instagram": { "enabled": true  },
-    "tiktok":    { "enabled": true  },
+    "instagram": { "enabled": true },
+    "tiktok":    { "enabled": true },
     "facebook":  { "enabled": false }
   },
   "googleDrive": {
@@ -109,30 +72,39 @@ Only these fields. Leave everything else at template defaults.
 }
 ```
 
-### Step 6 — Run the validator
+Leave `mcpServerUrl`, `mcpServerId`, and `imageGen.toolSlug` blank — `setup.js` writes them.
+
+### Step 3 — Connect OAuth + add OpenAI credential in the Composio dashboard
+
+The operator does this once per company at https://app.composio.dev:
+
+- For each enabled platform (`instagram` / `facebook` / `tiktok` / `googledrive`): create an Auth Config and finish the OAuth connect flow under the same `userId`.
+- Add an `openai` Auth Config with the OpenAI API key (gpt-image-2 needs it).
+- Optionally add an `openrouter` Auth Config for weekly trend research (Perplexity sonar).
+
+Do **not** put any of these keys in `config.json`. They live in Composio.
+
+### Step 4 — Restart the container so `setup.js` runs
 
 ```bash
-cd ~/restaurant-social-marketing-skill && node scripts/setup.js --config ~/social-marketing/config.json
+docker compose -f /opt/agents/<company>-marketing/docker-compose.yml restart
+docker logs -f marketing-agent-<company>-marketing
 ```
+
+`docker-entrypoint.sh` detects the empty `mcpServerUrl`, runs `node /app/scripts/setup.js`, which calls `composio.mcp.create()` + `composio.mcp.generate()`, writes the URL into config, and verifies it by listing tools.
 
 Every line must be ✅. Common failures:
 
-- **`composio.apiKey` rejected** → wrong key or wrong org. Check https://app.composio.dev → org → API Keys.
-- **`composio.userId` doesn't resolve** → userId doesn't match the entity under which OAuth connections were created. Check the org's Entities/Users page.
-- **`@composio/core SDK reachable` fails** → run `cd ~/restaurant-social-marketing-skill && npm install`.
+- **`composio.apiKey` rejected** → wrong key or wrong project.
+- **`auth config exists for "<toolkit>"` failed** → operator hasn't created the Auth Config in the Composio dashboard for that toolkit. The error message tells you whether the toolkit is OAuth (finish the connect flow) or API-key (paste the key).
+- **`MCP client lists tools` fails** → connection works but the server returned 0 tools. Usually means OAuth wasn't completed for the toolkits whose tools you'd expect.
 
-### Step 7 — Start Hermes
+### Step 5 — Hand the Telegram bot to the owner
 
-```bash
-hermes
-```
-
-### Step 8 — Hand the Telegram bot to the owner
-
-The owner starts a chat with the bot. The orchestrator runs ≤7 onboarding questions and writes answers to `~/social-marketing/restaurant-profile.json`. The Installer never touches that file.
+The owner starts a chat with the bot. The orchestrator runs ≤7 onboarding questions and writes answers to `/data/social-marketing/restaurant-profile.json`. The Installer never touches that file.
 
 ---
 
 ## One-Sentence Summary
 
-**Install skills, install SDK, paste two Composio values + Telegram token, validate, hand off.**
+**`COMPANY=<id> bash install.sh`, edit one config file, finish OAuth in the Composio dashboard, restart the container, hand off.**

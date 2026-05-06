@@ -1,33 +1,23 @@
-# Restaurant Social Media Marketing — v3
+# Restaurant Social Media Marketing — v4
 
 Hermes Agent skills + Node scripts that turn a restaurant's social media into an autonomous marketing partner. Goal is **more bookings**, not more views.
 
 ## Status
 
-**Working end-to-end** (verified on Rodolfino, 2026-04-17):
-- Slide generation via OpenRouter Gemini image models (`generate-slides.js`).
-- Text overlays via node-canvas (`add-text-overlay.js`).
-- Live Instagram carousel publish via Composio SDK (`post-to-instagram.js`) — 6-slide carousels go live on the feed, `ig_user_id` resolved from config, `image_file` parameter handles Composio-side hosting.
-- Telegram notification to the owner with post permalink + "convert to Reel for music" hint after publish.
+**v4 — MCP-native, Docker-packaged, gpt-image-2.** Implementation complete on the `v4-mcp-rework` branch; live smoke tests against a real Composio project still pending.
 
-**Working but untested against live platform APIs:**
-- TikTok draft post (`post-to-tiktok.js`).
-- Facebook multi-photo carousel (`post-to-facebook.js`).
+What changed from v3:
+- Single integration path: per-agent Composio MCP server (`composio.mcp.create()`), no SDK calls outside `setup.js`.
+- Image gen: `gpt-image-2` routed through Composio. The OpenAI key lives in the Composio project, not on the VM.
+- Config shrunk: no more `igUserId`, `pageId`, `imgbbApiKey`, OpenRouter key, or `imageGen.model`. Composio resolves all of these.
+- Containerized: one Hermes agent = one Docker container. `/data/social-marketing/` is a host volume mount.
 
-**Crons (install via `./scripts/install-cron.sh`):**
-- `daily-report.js` — 10:00 local. Pulls IG post insights via Composio, computes yesterday vs 7d baseline, sends Telegram summary + diagnostic action.
-- `weekly-research.js` — Mondays 09:00. OpenRouter web-search (perplexity/sonar by default) synthesises platform updates, viral formats, hook trends, upcoming dates + 3 actions for the week. Delivered via Telegram.
-
-**Not wired up yet (next phase):**
-- Telegram-triggered `generate post` — Hermes orchestration layer still hallucinates instead of invoking scripts. All pipeline commands today are run manually from the VM terminal.
-- Drive img2img (bot uses real food photos as references). `drive-sync.js` saves the folder ID; AI picks which subfolder at post time.
-- Platform posting scripts for TikTok + Facebook need live verification.
+Falling back to v3: the `main` branch still holds the working v3. `git checkout main` and the SDK-based stack is intact.
 
 ## Known platform constraints
 
-- **No trending music on carousels via API.** Instagram's Graph API doesn't expose the consumer music library to business accounts. After publish, `post-to-instagram.js` pings the owner on Telegram: *"Want music? Open the post → ⋯ → Share as Reel."* Instagram's mobile app handles the conversion + music picker natively.
-- **Scheduled posts via API don't reliably appear in Meta Business Suite's Planner.** Composio's `INSTAGRAM_POST_IG_USER_MEDIA` may silently drop the `scheduled_publish_time` parameter. Default mode is live publish; if scheduling is needed, use the mobile app's native scheduler.
-- **Composio `uploadFile` presign uses signed R2 URLs that Instagram rejects.** We bypass by passing `image_file: <absolute path>` directly to `INSTAGRAM_POST_IG_USER_MEDIA` — Composio handles the upload + URL on their backend.
+- **No trending music on carousels via API.** Instagram's Graph API doesn't expose the consumer music library to business accounts. After publish, `post-to-instagram.js` pings the owner on Telegram: *"Want music? Open the post → ⋯ → Share as Reel."*
+- **Scheduled posts via API don't reliably appear in Meta Business Suite's Planner.** Composio's Instagram tool may silently drop the `scheduled_publish_time` parameter. Default mode is live publish; if scheduling is needed, use the mobile app's native scheduler.
 
 ---
 
@@ -35,46 +25,38 @@ Hermes Agent skills + Node scripts that turn a restaurant's social media into an
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    CUSTOM SKILLS (in this repo)                 │
+│            DOCKER CONTAINER — one per Hermes agent              │
 │                                                                 │
-│  skills/restaurant-marketing      Orchestrator. Onboarding,     │
-│                                   daily commands, conversation, │
-│                                   promotions, calendar, self-   │
-│                                   improvement loop.             │
+│  /app                                                           │
+│    skills/restaurant-marketing      Orchestrator. Onboarding,   │
+│                                     daily commands, conversation,│
+│                                     promotions, calendar, self- │
+│                                     improvement loop.           │
 │                                                                 │
-│  skills/content-preparation       Asset pipeline. Decides what  │
-│                                   to create, finds reference    │
-│                                   photos, picks img2img vs      │
-│                                   txt2img, coordinates overlays │
-│                                   and captions.                 │
+│    skills/content-preparation       Asset pipeline.             │
+│    skills/marketing-intelligence    Data layer.                 │
 │                                                                 │
-│  skills/marketing-intelligence    Data layer. Daily analytics,  │
-│                                   weekly trend research,        │
-│                                   competitor research, cross-   │
-│                                   client aggregation.           │
+│    scripts/                         Cron jobs + tooling.        │
+│                                                                 │
+│  /data  (host volume mount)                                     │
+│    social-marketing/                                            │
+│      config.json                    API plumbing only.          │
+│      restaurant-profile.json        Owner-provided via Telegram.│
+│      photos/, posts/, knowledge-base/, reports/                 │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │ all external calls via
+                           │ all external calls via MCP (HTTPS only)
 ┌──────────────────────────▼──────────────────────────────────────┐
-│        COMPOSIO SDK — THE ONLY CREDENTIAL ON THE VM             │
+│        COMPOSIO MCP SERVER — created at install time            │
 │                                                                 │
-│  One Composio Organization per restaurant (provisioned by       │
-│  Jules). Two config fields: composio.apiKey + composio.userId.  │
-│                                                                 │
-│  The org holds: OAuth connections (TikTok / Instagram /         │
-│  Facebook / Drive) + the OpenRouter credential for image gen.   │
-│  No MCP. No REST. No third-party API keys on the VM.            │
+│  One Composio project per company. composio.mcp.create() at     │
+│  install writes the per-agent server URL into config.json.      │
+│  The server holds: OAuth connections (Instagram / Facebook /    │
+│  TikTok / Drive) + the OpenAI credential for gpt-image-2 +      │
+│  optional OpenRouter for weekly trend research.                 │
 │                                                                 │
 │  Single integration path:                                       │
-│    composio.tools.execute('TOOL_SLUG', { userId, arguments })   │
-│    Used by in-agent work AND cron scripts alike.                 │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ knowledge only — no extra keys
-┌──────────────────────────▼──────────────────────────────────────┐
-│                   ADAPTED EXTERNAL SKILLS                       │
-│                                                                 │
-│  adapted-skills/food-photography-hermes                         │
-│  adapted-skills/social-media-seo-hermes                         │
-│  adapted-skills/social-trend-monitor-hermes                     │
+│    callTool(config, 'TOOL_SLUG', args)   from mcp-client.js     │
+│    Used by Hermes AND every cron script.                        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -95,7 +77,7 @@ If a Telegram message from the agent requires technical knowledge to answer, tha
 
 ## Repository Layout
 
-**What Hermes loads** (copied into `~/.hermes/skills/` by `install.sh`):
+**What runs inside the container** (all under `/app/`):
 
 ```
 skills/                           ← custom skills for Hermes
@@ -104,170 +86,111 @@ skills/                           ← custom skills for Hermes
 └── marketing-intelligence/SKILL.md
 
 adapted-skills/                   ← external skills, API calls stripped
-├── food-photography-hermes/SKILL.md
-├── social-media-seo-hermes/SKILL.md
-└── social-trend-monitor-hermes/SKILL.md
+├── food-photography-hermes/
+├── social-media-seo-hermes/
+└── social-trend-monitor-hermes/
 
 scripts/                          ← Node.js scripts (called by skills at runtime)
-├── setup.js                      ← Phase 0 validation
-├── composio-helpers.js           ← SDK wrappers (executeTool, uploadFile)
-├── generate-slides.js            ← OpenRouter image gen (txt2img + img2img)
-├── add-text-overlay.js           ← node-canvas overlays on generated slides
-├── drive-sync.js                 ← pull reference photos from Drive via Composio
-├── drive-inventory.js            ← vision classification → photo-inventory.json
-├── post-to-instagram.js          ← carousel publish + Telegram notify (LIVE)
-├── post-to-tiktok.js             ← TikTok draft (untested live)
-├── post-to-facebook.js           ← Facebook multi-photo (untested live)
-├── daily-report.js               ← Module A analytics cron
-├── weekly-research.js            ← Module B trend research cron (OpenRouter web search)
-├── competitor-research.js        ← Module D competitor scan (skeleton)
-└── aggregator.js                 ← Cross-client pattern learning (network-level)
+├── setup.js                      ← Phase 0 validator + composio.mcp.create()
+├── mcp-client.js                 ← MCP client wrapper (callTool, listTools)
+├── generate-slides.js            ← gpt-image-2 over MCP (txt2img + img2img)
+├── add-text-overlay.js           ← node-canvas overlays
+├── drive-sync.js                 ← verify/create Drive folder via MCP
+├── post-to-instagram.js          ← carousel publish + Telegram notify
+├── post-to-tiktok.js             ← TikTok draft
+├── post-to-facebook.js           ← Facebook multi-photo
+├── daily-report.js               ← analytics cron
+├── weekly-research.js            ← Module B trend research cron
+├── competitor-research.js        ← Module D competitor scan
+├── aggregator.js                 ← Cross-client pattern learning
+└── docker-entrypoint.sh          ← container boot script
 
-tests/                            ← Offline test harness
-├── test-posting.js               ← 32 assertions; uses --dry-run mode
-└── fixtures/                     ← Test config + fake slides
+tests/
+└── test-mcp-client.js            ← offline unit test, MCP SDK stubbed
 
 templates/
-└── config.template.json          ← blank config for new deployments
+├── config.template.json          ← v4 minimal config (Telegram + Composio)
+├── docker-compose.yml            ← per-agent compose template
+└── SOUL.md                       ← Hermes persona override
+
+Dockerfile                        ← node:18-alpine + canvas + Hermes-ready
+.dockerignore
+install.sh                        ← host-side: clone, build, compose up
 ```
 
-**Repo-internal only** — never copied into Hermes:
+**Repo-internal only** — never copied into the container at runtime:
 
 ```
-docs/      ← design reference (PRD, notes). Do NOT copy to ~/.hermes/skills/.
+docs/      ← spec, plan, design notes.
 ```
-
-`install.sh` only copies `skills/*` and `adapted-skills/*`.
 
 ---
 
-## Installation (Per Client)
+## Installation (per agent)
 
-> **If you are an AI agent doing the install from the terminal, read [INSTALLER.md](INSTALLER.md) first — it's the unambiguous brief for what you can and cannot ask the human.**
+> **If you are an AI installer doing this from the terminal, read [INSTALLER.md](INSTALLER.md) first.**
 
-Run each step below on the client VM. Every step is a single command — paste one at a time.
+The install runs **inside a Docker container** named after the company + agent. `install.sh` is a thin host-side shim that clones the repo, builds the image, and brings the compose service up.
 
-### Step 1 — Clone the repo
-
-```bash
-git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/restaurant-social-marketing-skill
-cd ~/restaurant-social-marketing-skill
-```
-
-After this: you should see `skills/`, `adapted-skills/`, `scripts/`, `templates/` inside `~/restaurant-social-marketing-skill`.
-
-### Step 2 — Copy skills into Hermes
-
-Hermes organizes skills by category. These skills go under `social-media/`:
+### One-shot
 
 ```bash
-mkdir -p ~/.hermes/skills/social-media
-cp -r ~/restaurant-social-marketing-skill/skills/* ~/.hermes/skills/social-media/
-cp -r ~/restaurant-social-marketing-skill/adapted-skills/* ~/.hermes/skills/social-media/
+COMPANY=rodolfino bash install.sh
 ```
 
-If your Hermes uses a different skill layout (top-level only, or a different category), override: `SKILLS_CATEGORY=""` (top-level) or `SKILLS_CATEGORY=<other>` when running `install.sh`.
+That clones the repo to `~/restaurant-social-marketing-skill`, builds `restaurant-marketing:v4-alpha`, scaffolds `/var/lib/akira/rodolfino/marketing/` as the data volume, materializes a compose file at `/opt/agents/rodolfino-marketing/docker-compose.yml`, and starts the container.
 
-### Step 3 — Install SDK dependencies
+The container's first boot scaffolds `/data/social-marketing/` and copies the config template — then sleeps so the operator can edit it.
 
-```bash
-cd ~/restaurant-social-marketing-skill && npm install
-```
+### Operator steps after first boot
 
-### Step 5 — Scaffold the client working directory
-
-```bash
-cd ~
-mkdir -p social-marketing/photos/{dishes,ambiance,kitchen,exterior,unsorted}
-mkdir -p social-marketing/{posts,knowledge-base}
-mkdir -p social-marketing/reports/{trend-reports,competitor}
-cp ~/restaurant-social-marketing-skill/templates/config.template.json ~/social-marketing/config.json
-```
-
-### Step 6 — Fill in `~/social-marketing/config.json` (Installer scope only)
-
-`config.json` is Installer-scope only — API plumbing, never restaurant content. **Do not put restaurant name, cuisine, menu, or booking URL here.** Those come from the owner via Telegram during onboarding and land in `restaurant-profile.json`.
-
-Fields you set:
-- **`telegram.botToken`** + **`telegram.chatId`** — from @BotFather + `getUpdates`.
-- **`composio.apiKey`** + **`composio.userId`** — org-scoped key + entity ID. One Composio Organization per restaurant; the org holds every OAuth + OpenRouter credential.
-- **`platforms.<name>.enabled`** — one boolean per platform the restaurant uses.
-- **`googleDrive.enabled`** — `true` if the restaurant is using Drive. `googleDrive.folderName` defaults to `akira-agent_src`. No folder ID needed (auto-created at first use).
-- **`timezone`**, **`country`** — defaults are `Europe/Stockholm` / `SE`.
-
-### Step 7 — Validate (Installer only)
-
-```bash
-set -a && source ~/.hermes/.env && set +a
-node ~/restaurant-social-marketing-skill/scripts/setup.js --config ~/social-marketing/config.json
-```
-
-Every check must report ✅. **Do not hand the bot to the owner until `setup.js` reports all green.**
-
-### Step 8 — Start Hermes
-
-```bash
-hermes
-```
-
-### Step 9 — Hand the Telegram bot to the owner
-
-The owner starts a chat with the bot. The orchestrator runs ≤7 onboarding questions and writes the answers to `~/social-marketing/restaurant-profile.json`. The Installer never touches this file.
+1. Edit `/var/lib/akira/<company>/<agent>/social-marketing/config.json`:
+   - `telegram.botToken` + `chatId` (from @BotFather + `getUpdates`)
+   - `composio.apiKey` + `composio.userId` (per-agent identifier, e.g. `rodolfino-marketing`)
+   - flip the platforms you use to `enabled: true`
+2. In the [Composio dashboard](https://app.composio.dev), under the company project:
+   - Create + connect OAuth for each enabled platform (Instagram / Facebook / TikTok / Google Drive).
+   - Add the OpenAI credential for `gpt-image-2` image gen.
+   - (Optional) Add an OpenRouter credential if you want weekly trend research.
+3. Restart the container so `docker-entrypoint.sh` runs `setup.js`:
+   ```bash
+   docker compose -f /opt/agents/<company>-marketing/docker-compose.yml restart
+   docker logs -f marketing-agent-<company>-marketing
+   ```
+4. `setup.js` calls `composio.mcp.create()`, writes `mcpServerUrl` into the config, and verifies the URL works. When it reports `✅ All N checks passed`, hand the Telegram bot to the owner.
 
 ---
 
-### Shortcut — one command
+## Live Posting Verification
 
-If you trust the script end-to-end:
-
-```bash
-git clone https://github.com/jules756/restaurant-social-marketing-skill.git ~/restaurant-social-marketing-skill \
-  && cd ~/restaurant-social-marketing-skill \
-  && CLIENT_DIR=~/social-marketing ./install.sh
-```
-
-`install.sh` runs Steps 2–5 + 7 and prompts for the two API keys. You still need to edit `config.json` (Step 6) between the first and second runs.
-
----
-
-## Live Posting Verification (Current Working Path)
-
-Minimum config.json fields for a live Instagram post:
+Minimum `config.json` for a live Instagram post (most fields written by setup.js — operator only fills the first six):
 
 ```json
 {
   "telegram": { "botToken": "<bot token>", "chatId": "<owner chat id>" },
   "composio": {
-    "apiKey": "ak_<org-scoped key>",
-    "userId": "pg-test-<or your entity id>"
+    "apiKey": "<project API key>",
+    "userId": "<per-agent id>",
+    "mcpServerUrl": "<written by setup.js>",
+    "mcpServerId": "<written by setup.js>"
   },
-  "platforms": {
-    "instagram": {
-      "enabled": true,
-      "igUserId": "17841<17-digit IG Business Account ID>"
-    }
-  },
-  "imageGen": { "model": "google/gemini-3.1-flash-image-preview" },
-  "imageHost": { "imgbbApiKey": "<imgbb key — currently unused since image_file path>" }
+  "platforms": { "instagram": { "enabled": true } }
 }
 ```
 
-Gotchas from the live bring-up:
-- `composio.userId` must match the **entity** under which OAuth was connected (often `pg-test-…` if you connected via Composio's dashboard "Test" button) — not your operator account ID.
-- `igUserId` is the **Instagram Business Account ID** (17-digit starting `17841…`), not Composio's user. Find it in Meta Business Suite → Settings → Instagram accounts, or via Graph API Explorer `me/accounts?fields=instagram_business_account`.
-- `imgbbApiKey` is configured but not used in the current Instagram flow (we use `image_file` → Composio handles hosting). Keep it for future flows or remove.
-- Run `npm install` in the repo before first invocation — `@composio/core` is a local dep.
-
-End-to-end test (VM terminal):
+End-to-end test (inside the container):
 
 ```bash
-cd ~/restaurant-social-marketing-skill && node scripts/post-to-instagram.js --config ~/social-marketing/config.json --dir ~/social-marketing/posts/<post-dir>
+docker exec -it marketing-agent-<company>-marketing \
+  node /app/scripts/post-to-instagram.js \
+  --config /data/social-marketing/config.json \
+  --dir /data/social-marketing/posts/<post-dir>
 ```
 
 Expected: `{"ok":true,"platform":"instagram","mode":"live","mediaId":"...","permalink":"https://www.instagram.com/p/..."}` + a Telegram message to the owner.
 
 ## References
 
-- **OpenRouter** — https://openrouter.ai/docs
-- **Composio** — https://docs.composio.dev (Instagram toolkit: https://docs.composio.dev/toolkits/instagram)
+- **Composio** — https://docs.composio.dev (single-toolkit MCP: https://docs.composio.dev/docs/single-toolkit-mcp)
+- **OpenAI gpt-image-2** — https://platform.openai.com/docs/guides/images
 - **Upstream external skills** — links in each adapted skill's SKILL.md.

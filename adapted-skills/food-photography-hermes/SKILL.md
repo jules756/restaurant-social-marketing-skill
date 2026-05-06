@@ -10,7 +10,7 @@ metadata:
 
 # Food Photography (Hermes Adaptation)
 
-**This is a knowledge document, not an execution skill.** No API keys beyond what `restaurant-marketing` already requires. All actual image generation goes through `content-preparation` → OpenRouter → whatever model the Installer set in `config.imageGen.model`.
+**This is a knowledge document, not an execution skill.** No API keys beyond what `restaurant-marketing` already requires. All actual image generation goes through `content-preparation` → Composio MCP → `gpt-image-2` (the OpenAI credential lives in the Composio project).
 
 **Upstream source:** https://skills.sh/eachlabs/skills/food-photography-generation
 
