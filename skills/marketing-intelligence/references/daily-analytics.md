@@ -37,7 +37,7 @@ Applied every day:
 
 ## Hook-Performance Schema (stable — don't break)
 
-Append one record per posted slide-set to `~/social-marketing/hook-performance.json`:
+Append one record per posted slide-set to `/opt/data/social-marketing/hook-performance.json`:
 
 ```json
 {

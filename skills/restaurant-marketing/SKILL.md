@@ -11,13 +11,13 @@ Your job: **more bookings**. Not more views.
 
 ## First Contact Rules
 
-- First message in any new conversation: check `~/social-marketing/restaurant-profile.json` with `read_file`. If `name` is filled, greet using it. If the file doesn't exist or `name` is empty, use generic phrasing and start Phase 1 onboarding with Question 1.
+- First message in any new conversation: check `/opt/data/social-marketing/restaurant-profile.json` with `read_file`. If `name` is filled, greet using it. If the file doesn't exist or `name` is empty, use generic phrasing and start Phase 1 onboarding with Question 1.
 - **Never invent a restaurant name.** The name comes from Q2 of onboarding. Placeholders like `[Restaurant]` in skill text are not literal names.
 - First reply on a new session: *"Hi! Let's set up your marketing. Which language should we talk in?"* — generic, no restaurant name.
 
 ## Phase 1 — Owner Onboarding (7 Questions, Telegram)
 
-One question at a time. Conversational. Save each answer to `~/social-marketing/restaurant-profile.json` as it arrives (don't wait until the end). Schema and full question flow: [references/onboarding.md](references/onboarding.md).
+One question at a time. Conversational. Save each answer to `/opt/data/social-marketing/restaurant-profile.json` as it arrives (don't wait until the end). Schema and full question flow: [references/onboarding.md](references/onboarding.md).
 
 Summary: language → name+cuisine → signature dishes (with visual detail) → vibe → typical guest → booking method+URL → Drive photos (silent check first).
 
@@ -31,7 +31,7 @@ The owner sees: one short ack if it will take >20 sec (*"On it — about 1 minut
 
 Execution:
 
-1. `read_file`: `~/social-marketing/restaurant-profile.json`. Pick the dish (default: first signature dish, or one the owner mentioned).
+1. `read_file`: `/opt/data/social-marketing/restaurant-profile.json`. Pick the dish (default: first signature dish, or one the owner mentioned).
 2. `memory`: pull recent hook performance for this restaurant.
 3. Delegate actual image generation to [content-preparation](../content-preparation/SKILL.md) — it owns the img2img vs txt2img decision, prompt construction (using [food-photography-hermes](../../adapted-skills/food-photography-hermes/SKILL.md) vocabulary), and hook/caption writing (using [social-media-seo-hermes](../../adapted-skills/social-media-seo-hermes/SKILL.md) library). Captions and hooks come from LLM reasoning, not hardcoded.
 4. content-preparation returns a directory with `slide-1.png` … `slide-6.png` + `caption.txt`.
@@ -40,9 +40,9 @@ Execution:
 7. Ask: *"Ready to post?"*
 8. On yes, for each enabled platform in `config.platforms`, invoke `terminal`:
    ```bash
-   node ~/restaurant-social-marketing-skill/scripts/post-to-<platform>.js \
-     --config ~/social-marketing/config.json \
-     --dir ~/social-marketing/posts/<timestamp>
+   node /opt/hermes/social-marketing-skill/scripts/post-to-<platform>.js \
+     --config /opt/data/social-marketing/config.json \
+     --dir /opt/data/social-marketing/posts/<timestamp>
    ```
    Each script prints a JSON line: `{"ok": true, "platform": "...", "mediaId": "...", "permalink": "..."}` on success, `{"ok": false, "error": "..."}` on failure. Parse the last line of stdout. Report results honestly to the owner — *"Posted to Instagram"* + permalink, or *"Instagram failed: [short reason]. Saved for retry."* Do not pretend success.
 9. `memory` append a record: `{ hookCategory, hookText, dish, platform, approach, timestamp, mediaId, permalink }`. This feeds future selection.
@@ -85,7 +85,7 @@ Three modes: same-day (post immediately, no approval, speed > polish), planned (
 
 ## Knowledge-Gap Probing
 
-One question per day max. Naturally timed. Never during stress. Triggers: missing chef story, missing recipe origins, missing sourcing info, missing dish photos in Drive inventory. Save answers to `~/social-marketing/knowledge-base/*.json`. Full trigger list: [references/knowledge-gaps.md](references/knowledge-gaps.md).
+One question per day max. Naturally timed. Never during stress. Triggers: missing chef story, missing recipe origins, missing sourcing info, missing dish photos in Drive inventory. Save answers to `/opt/data/social-marketing/knowledge-base/*.json`. Full trigger list: [references/knowledge-gaps.md](references/knowledge-gaps.md).
 
 ## Calendar Intelligence
 
@@ -102,7 +102,7 @@ Drive sync fail → fall back to cached photos → fall back to text-only image 
 ## File Layout (Platform-Agnostic)
 
 ```
-~/social-marketing/
+/opt/data/social-marketing/
 ├── restaurant-profile.json     ← owner-provided via this skill
 ├── knowledge-base/              ← chef, history, recipes, menu
 ├── photos/                      ← Drive cache (reference material, NOT post output)

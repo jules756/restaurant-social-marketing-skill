@@ -130,34 +130,70 @@ docs/      ← spec, plan, design notes.
 
 > **If you are an AI installer doing this from the terminal, read [INSTALLER.md](INSTALLER.md) first.**
 
-The install runs **inside a Docker container** named after the company + agent. `install.sh` is a thin host-side shim that clones the repo, builds the image, and brings the compose service up.
+The flow is: stand up a Hermes container → run **Hermes setup** in the TUI to configure the model + provider key → fill the marketing-specific `config.json` with Telegram + Composio creds → restart the container so v4's pre-start runs `setup.js` (which provisions the per-agent Composio MCP server).
 
-### One-shot
+### Step 1 — Build + start the container
 
 ```bash
-COMPANY=rodolfino bash install.sh
+COMPANY=<short-id> bash install.sh
 ```
 
-That clones the repo to `~/restaurant-social-marketing-skill`, builds `restaurant-marketing:v4-alpha`, scaffolds `/var/lib/akira/rodolfino/marketing/` as the data volume, materializes a compose file at `/opt/agents/rodolfino-marketing/docker-compose.yml`, and starts the container.
+That clones the repo, builds `restaurant-marketing:v4-alpha` (layered on `nousresearch/hermes-agent`), scaffolds `~/.hermes-agent-<company>-marketing/` as the data volume, materializes a compose file at `~/agents/<company>-marketing/docker-compose.yml`, and brings the container up.
 
-The container's first boot scaffolds `/data/social-marketing/` and copies the config template — then sleeps so the operator can edit it.
+On first boot, our pre-start script writes the v4 config template to `/opt/data/social-marketing/config.json` and then sleeps — it explicitly will not run `setup.js` until `composio.apiKey`, `composio.userId`, and Telegram credentials are filled in.
 
-### Operator steps after first boot
+### Step 2 — Run Hermes setup (interactive, inside the container)
 
-1. Edit `/var/lib/akira/<company>/<agent>/social-marketing/config.json`:
-   - `telegram.botToken` + `chatId` (from @BotFather + `getUpdates`)
-   - `composio.apiKey` + `composio.userId` (per-agent identifier, e.g. `rodolfino-marketing`)
-   - flip the platforms you use to `enabled: true`
-2. In the [Composio dashboard](https://app.composio.dev), under the company project:
-   - Create + connect OAuth for each enabled platform (Instagram / Facebook / TikTok / Google Drive).
-   - Add the OpenAI credential for `gpt-image-2` image gen.
-   - (Optional) Add an OpenRouter credential if you want weekly trend research.
-3. Restart the container so `docker-entrypoint.sh` runs `setup.js`:
-   ```bash
-   docker compose -f /opt/agents/<company>-marketing/docker-compose.yml restart
-   docker logs -f marketing-agent-<company>-marketing
-   ```
-4. `setup.js` calls `composio.mcp.create()`, writes `mcpServerUrl` into the config, and verifies the URL works. When it reports `✅ All N checks passed`, hand the Telegram bot to the owner.
+This is the standard Hermes first-time setup — model + provider key. Run it interactively from the host:
+
+```bash
+docker run --rm -it \
+  --name marketing-agent-<company>-marketing-setup \
+  -v ~/.hermes-agent-<company>-marketing:/opt/data \
+  restaurant-marketing:v4-alpha hermes setup
+```
+
+The setup wizard writes the chosen provider key to `/opt/data/.env` (e.g. `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`) and the model selection to `/opt/data/config.yaml`. Both are persisted on the host volume.
+
+### Step 3 — Fill in the marketing config
+
+Edit the v4 config template that was scaffolded in step 1:
+
+```bash
+sudo chown -R "$USER":"$USER" ~/.hermes-agent-<company>-marketing/  # if Hermes chown'd the volume
+nano ~/.hermes-agent-<company>-marketing/social-marketing/config.json
+```
+
+Fill exactly these fields:
+
+- `telegram.botToken` + `chatId` (from @BotFather + `getUpdates`)
+- `composio.apiKey` + `composio.userId` (per-agent identifier, e.g. `<company>-marketing`)
+- flip the platforms you use to `enabled: true`
+
+Leave `mcpServerUrl` and `mcpServerId` empty — `setup.js` writes them in step 5.
+
+### Step 4 — Provision OAuth + credentials in the Composio dashboard
+
+In [https://app.composio.dev](https://app.composio.dev), under the project that owns the API key from step 3:
+
+- Create + connect an OAuth Auth Config for each enabled platform (Instagram / Facebook / TikTok / Google Drive).
+- Add the OpenAI Auth Config (paste the API key — `gpt-image-2` needs it).
+- Optional: add OpenRouter for weekly trend research.
+
+The Composio `userId` you put in `config.json` must be the entity that owns those OAuth connections. If you connected via the dashboard's "Test" button, the entity ID looks like `pg-test-…` and that's what goes in `composio.userId`.
+
+### Step 5 — Restart the container so `setup.js` runs
+
+```bash
+docker compose -f ~/agents/<company>-marketing/docker-compose.yml restart
+docker logs -f marketing-agent-<company>-marketing
+```
+
+The pre-start script sees `composio.mcpServerUrl` is empty, runs `setup.js`, which calls `composio.mcp.create()` + `mcp.generate()`, writes the URL into config, and verifies by listing tools. When you see `✅ All N checks passed`, the marketing skill is fully wired up. Hermes then starts normally.
+
+### Step 6 — Hand the Telegram bot to the owner
+
+The owner messages the bot. The `restaurant-marketing` skill picks up onboarding from there.
 
 ---
 
@@ -182,9 +218,9 @@ End-to-end test (inside the container):
 
 ```bash
 docker exec -it marketing-agent-<company>-marketing \
-  node /app/scripts/post-to-instagram.js \
-  --config /data/social-marketing/config.json \
-  --dir /data/social-marketing/posts/<post-dir>
+  node /opt/hermes/social-marketing-skill/scripts/post-to-instagram.js \
+  --config /opt/data/social-marketing/config.json \
+  --dir /opt/data/social-marketing/posts/<post-dir>
 ```
 
 Expected: `{"ok":true,"platform":"instagram","mode":"live","mediaId":"...","permalink":"https://www.instagram.com/p/..."}` + a Telegram message to the owner.

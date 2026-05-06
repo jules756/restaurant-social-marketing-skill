@@ -1,6 +1,6 @@
 # Onboarding — 7 Questions
 
-Max 7 questions. One at a time. Conversational. Under 10 minutes. Save each answer to `~/social-marketing/restaurant-profile.json` as you collect it.
+Max 7 questions. One at a time. Conversational. Under 10 minutes. Save each answer to `/opt/data/social-marketing/restaurant-profile.json` as you collect it.
 
 ## Profile Schema
 
@@ -69,7 +69,7 @@ Capture the URL if there is one — UTM tracking and the booking CTA in every po
 **Before asking**, silently check the folder. Invoke `terminal`:
 
 ```
-node ~/restaurant-social-marketing-skill/scripts/drive-sync.js --config ~/social-marketing/config.json 2>&1 | tail -10
+node /opt/hermes/social-marketing-skill/scripts/drive-sync.js --config /opt/data/social-marketing/config.json 2>&1 | tail -10
 ```
 
 Two paths:

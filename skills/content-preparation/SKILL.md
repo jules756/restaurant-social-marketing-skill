@@ -7,7 +7,7 @@ description: Asset pipeline for restaurant social content. Given a dish + contex
 
 You produce posts. The [restaurant-marketing orchestrator](../restaurant-marketing/SKILL.md) decides when; you decide what and how. You never message the owner; errors go back through the orchestrator.
 
-Your output is always the same shape, saved under `~/social-marketing/posts/<YYYY-MM-DD-HHmm>/`:
+Your output is always the same shape, saved under `/opt/data/social-marketing/posts/<YYYY-MM-DD-HHmm>/`:
 
 ```
 slide-1.png … slide-6.png        — final images with text overlays
@@ -23,9 +23,9 @@ metadata.json                    — { contentType, approach, platform, dishes, 
 For every post:
 
 1. **Content type** — regular dish, promotion, knowledge-base story, trend-driven, spontaneous. Orchestrator passes this as input.
-2. **Reference photos?** — `read_file` the inventory at `~/social-marketing/photo-inventory.json`. If `byDish[<dishName>].bestFile` exists → **img2img** (preferred). Otherwise → **txt2img**.
+2. **Reference photos?** — `read_file` the inventory at `/opt/data/social-marketing/photo-inventory.json`. If `byDish[<dishName>].bestFile` exists → **img2img** (preferred). Otherwise → **txt2img**.
 3. **Urgency?** — `fast` (same-day promo) vs `quality` (planned). Passed by orchestrator or inferred from content type.
-4. **Trending format?** — `read_file` `~/social-marketing/trend-report.json` if present. If a format is flagged `testNext: true` and fits the content type, apply it.
+4. **Trending format?** — `read_file` `/opt/data/social-marketing/trend-report.json` if present. If a format is flagged `testNext: true` and fits the content type, apply it.
 
 Never skip step 2. Inventory check happens before prompt construction.
 
@@ -34,10 +34,10 @@ Never skip step 2. Inventory check happens before prompt construction.
 ### Step 1: Gather inputs
 
 ```
-read_file: ~/social-marketing/config.json
-read_file: ~/social-marketing/restaurant-profile.json
-read_file: ~/social-marketing/photo-inventory.json        (ok if missing)
-read_file: ~/social-marketing/trend-report.json            (ok if missing)
+read_file: /opt/data/social-marketing/config.json
+read_file: /opt/data/social-marketing/restaurant-profile.json
+read_file: /opt/data/social-marketing/photo-inventory.json        (ok if missing)
+read_file: /opt/data/social-marketing/trend-report.json            (ok if missing)
 memory: last 10 hook-performance entries for this restaurant
 ```
 
@@ -78,9 +78,9 @@ EOF
 Invoke `terminal`:
 
 ```bash
-node ~/restaurant-social-marketing-skill/scripts/generate-slides.js \
-  --config ~/social-marketing/config.json \
-  --output ~/social-marketing/posts/<timestamp> \
+node /opt/hermes/social-marketing-skill/scripts/generate-slides.js \
+  --config /opt/data/social-marketing/config.json \
+  --output /opt/data/social-marketing/posts/<timestamp> \
   --prompts /tmp/prompts-<ts>.json \
   --platform <tiktok|instagram|facebook> \
   --urgency <fast|quality> \
@@ -96,8 +96,8 @@ Exit code 0 + 6 `slide-N-raw.png` files = success. Non-zero = read the error and
 Invoke `terminal`:
 
 ```bash
-node ~/restaurant-social-marketing-skill/scripts/add-text-overlay.js \
-  --input ~/social-marketing/posts/<timestamp> \
+node /opt/hermes/social-marketing-skill/scripts/add-text-overlay.js \
+  --input /opt/data/social-marketing/posts/<timestamp> \
   --texts /tmp/texts-<ts>.json
 ```
 
@@ -107,7 +107,7 @@ Produces `slide-1.png` … `slide-6.png` (final). If `canvas` native dep is miss
 
 Compose the caption yourself (LLM reasoning) using the keyword-first rules from [social-media-seo-hermes/SKILL.md](../../adapted-skills/social-media-seo-hermes/SKILL.md). First 125 chars lead with what the post is about + restaurant name + city; hook nuance comes after; hashtags from [social-media-seo-hermes/references/keywords.md](../../adapted-skills/social-media-seo-hermes/references/keywords.md); CTA line with UTM parameters.
 
-Write to `~/social-marketing/posts/<timestamp>/caption.txt` via `patch` or `terminal`.
+Write to `/opt/data/social-marketing/posts/<timestamp>/caption.txt` via `patch` or `terminal`.
 
 UTM format (append to `restaurant-profile.json.bookingUrl`):
 ```
@@ -146,18 +146,18 @@ Always check `config.platforms.<name>.enabled` before generating. Generate only 
 | Instagram | 4:5 portrait  | 6 (up to 10) | Direct publish |
 | Facebook  | 16:9 landscape | 1 (hero)  | Single photo |
 
-Never generate a TikTok set if TikTok is disabled. Paths always `~/social-marketing/…` — never `tiktok-marketing/`.
+Never generate a TikTok set if TikTok is disabled. Paths always `/opt/data/social-marketing/…` — never `tiktok-marketing/`.
 
 ## Drive Workflow
 
 On first setup and after every Drive sync:
 
 ```bash
-node ~/restaurant-social-marketing-skill/scripts/drive-sync.js --config ~/social-marketing/config.json
-node ~/restaurant-social-marketing-skill/scripts/drive-inventory.js --config ~/social-marketing/config.json
+node /opt/hermes/social-marketing-skill/scripts/drive-sync.js --config /opt/data/social-marketing/config.json
+node /opt/hermes/social-marketing-skill/scripts/drive-inventory.js --config /opt/data/social-marketing/config.json
 ```
 
-`drive-inventory.js` runs vision classification per photo (via config's OpenRouter credential), categorizes into `dishes/ambiance/kitchen/exterior`, and updates `~/social-marketing/photo-inventory.json`. If a category is empty, it notes the gap in `inventory.missing` for the orchestrator to probe naturally.
+`drive-inventory.js` runs vision classification per photo (via config's OpenRouter credential), categorizes into `dishes/ambiance/kitchen/exterior`, and updates `/opt/data/social-marketing/photo-inventory.json`. If a category is empty, it notes the gap in `inventory.missing` for the orchestrator to probe naturally.
 
 **Critical:** Drive photos are REFERENCES for image generation — they are NOT the images posted to social. Never mention them as the post content. Full details: [references/drive-workflow.md](references/drive-workflow.md).
 

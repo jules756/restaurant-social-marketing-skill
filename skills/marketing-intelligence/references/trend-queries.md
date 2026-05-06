@@ -39,7 +39,7 @@ For markets outside SE/NO, use `web_search` once at onboarding to learn local re
 
 ## Output Schema
 
-### Structured — `~/social-marketing/trend-report.json`
+### Structured — `/opt/data/social-marketing/trend-report.json`
 
 ```json
 {
@@ -82,7 +82,7 @@ For markets outside SE/NO, use `web_search` once at onboarding to learn local re
 }
 ```
 
-### Narrative — `~/social-marketing/reports/trend-reports/<YYYY-MM-DD>-weekly.md`
+### Narrative — `/opt/data/social-marketing/reports/trend-reports/<YYYY-MM-DD>-weekly.md`
 
 ```
 # Weekly Trend Report — Week of <YYYY-MM-DD>
