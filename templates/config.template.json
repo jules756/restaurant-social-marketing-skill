@@ -34,7 +34,15 @@
   "timezone": "Europe/Stockholm",
   "country": "SE",
   "posting": {
-    "schedule": ["11:00"]
+    "_comment": "schedule: array of HH:MM (24h, local timezone) when auto-post fires. Add multiple for lunch+dinner posts. autoPost.enabled toggles the whole feature; .paused is set by /pause and /resume slash commands; .lastPostedAt and .consecutiveFailures are written by auto-post.js — leave blank initially.",
+    "schedule": ["11:00"],
+    "autoPost": {
+      "enabled": true,
+      "paused": false,
+      "lastPostedAt": null,
+      "consecutiveFailures": 0,
+      "pausedUntil": null
+    }
   },
   "paths": {
     "baseDir": "{{AGENT_HOME}}/social-marketing/",

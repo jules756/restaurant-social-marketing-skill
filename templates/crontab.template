@@ -14,6 +14,13 @@
 # It is NOT scheduled — restaurants don't add photos every 30 min, and
 # we'd rather pay the sync cost when generating, not idly.
 
+# Auto-post — daily 11:00 (matches default config.posting.schedule[0]).
+# End-to-end: scenario pick → drive sync → generate → overlay → post → notify.
+# Respects config.posting.autoPost.{enabled, paused, lastPostedAt, consecutiveFailures}.
+# Use /pause and /resume in Telegram to control without touching config.
+# To change the time, edit the cron line below AND config.posting.schedule[0].
+0 11 * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/auto-post.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/auto-post.log 2>&1
+
 # Daily analytics — 08:00 every day. Writes a report file Hermes reads later.
 0 8 * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/daily-report.js --config {{AGENT_HOME}}/social-marketing/config.json --days 3 >> {{AGENT_HOME}}/social-marketing/logs/daily-report.log 2>&1
 
