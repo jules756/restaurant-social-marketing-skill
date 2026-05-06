@@ -110,7 +110,11 @@ async function fetchAuthConfigs(composio, toolkits) {
   if (missing.length) { console.log(`\n❌ Missing auth configs for: ${missing.join(', ')}\n`); process.exit(1); }
 
   // 4. mcp.create
-  const serverName = `restaurant-marketing-${userId}`;
+  // Composio caps server names at 30 chars and accepts [a-z0-9-]. Hash
+  // the userId into 8 hex chars and prefix with "rm-" so the name is
+  // stable for a given userId, deterministic across reinstalls, and short.
+  const userHash = require('crypto').createHash('sha1').update(userId).digest('hex').slice(0, 8);
+  const serverName = `rm-${userHash}`;
   let server;
   try {
     server = await composio.mcp.create(serverName, {
