@@ -27,7 +27,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadConfig } = require('./mcp-client');
+const { callTool, loadConfig } = require('./mcp-client');
 
 const args = process.argv.slice(2);
 const getArg = (name, def) => {
@@ -170,28 +170,21 @@ function extractJson(text) {
 }
 
 async function callOpenRouter(prompt) {
-  const key = config.imageGen?.openrouterApiKey || process.env.OPENROUTER_API_KEY;
-  if (!key) throw new Error('No OpenRouter key. Set config.imageGen.openrouterApiKey or OPENROUTER_API_KEY env.');
-
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://akira-agent.com',
-      'X-Title': 'restaurant-social-marketing'
-    },
-    body: JSON.stringify({
-      model: RESEARCH_MODEL,
-      messages: [
-        { role: 'system', content: 'You are a concise restaurant social media trend researcher. Return only valid JSON matching the schema given. Use web search. No preamble, no trailing prose.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.3
-    })
+  // v4: no OpenRouter key on the VM. Composio MCP advertises an
+  // OPENROUTER_CHAT_COMPLETIONS tool whose credential lives in the
+  // Composio project. Same payload shape as the OpenRouter REST API.
+  const result = await callTool(config, 'OPENROUTER_CHAT_COMPLETIONS', {
+    model: RESEARCH_MODEL,
+    messages: [
+      { role: 'system', content: 'You are a concise restaurant social media trend researcher. Return only valid JSON matching the schema given. Use web search. No preamble, no trailing prose.' },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0.3
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${JSON.stringify(data).slice(0, 300)}`);
+
+  // callTool returns the parsed JSON payload. Composio toolkits commonly
+  // wrap the upstream response under `data` — probe both shapes.
+  const data = result.data || result;
   if (data.error) throw new Error(`OpenRouter error: ${data.error.message || JSON.stringify(data.error)}`);
 
   const content = data.choices?.[0]?.message?.content;

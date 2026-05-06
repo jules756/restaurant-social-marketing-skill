@@ -1,63 +1,56 @@
 {
-  "_comment": "Installer-only file. Restaurant info comes from the owner via Telegram onboarding → restaurant-profile.json. This file holds API plumbing only.",
+  "_comment": "Installer-only file. Restaurant info comes from the owner via Telegram onboarding → restaurant-profile.json. v4: every external call goes through the per-agent Composio MCP server. The OpenAI key for gpt-image-2 lives in the Composio project, not on this VM.",
   "telegram": {
     "botToken": "",
     "chatId": ""
   },
   "composio": {
-    "_comment": "One Composio Organization per restaurant client. The org-scoped API key + userId are the only credentials this VM needs. IMPORTANT: userId must be the ENTITY under which OAuth connections were created in the Composio dashboard — NOT your operator account ID. If you connected via the dashboard's Test button, it will look like 'pg-test-<something>'.",
+    "_comment": "apiKey is your Composio project API key. userId is a per-agent identifier (e.g. 'rodolfino-marketing'). mcpServerUrl + mcpServerId are written by setup.js after composio.mcp.create() — leave blank.",
     "apiKey": "",
-    "userId": ""
+    "userId": "",
+    "mcpServerUrl": "",
+    "mcpServerId": ""
   },
   "platforms": {
-    "instagram": {
-      "_comment": "igUserId is the Instagram Business Account ID — a 17-digit number starting with 17841. Find it in Meta Business Suite → Settings → Instagram accounts, or via Graph API Explorer: me/accounts?fields=instagram_business_account. Required by Instagram's Graph API; not optional.",
-      "enabled": false,
-      "igUserId": ""
-    },
+    "instagram": { "enabled": false },
     "tiktok":    { "enabled": false },
-    "facebook":  {
-      "enabled": false,
-      "pageId": ""
-    }
+    "facebook":  { "enabled": false }
   },
   "googleDrive": {
     "enabled": false,
     "folderName": "akira-agent_src",
-    "localCachePath": "social-marketing/photos/",
-    "inventoryPath": "social-marketing/photo-inventory.json"
+    "localCachePath": "/data/social-marketing/photos/",
+    "inventoryPath": "/data/social-marketing/photo-inventory.json"
   },
   "analytics": {
-    "googleAnalytics": { "enabled": false, "propertyId": "" },
     "bookingTracking": { "method": "manual", "dailyBaseline": 0 },
     "utmSource": "social"
   },
   "imageGen": {
-    "_comment": "Image generation model. Verify availability at https://openrouter.ai/models. Defaults to the current best Gemini image model — swap as newer ones ship. openrouterApiKey is the direct fallback used by generate-slides.js and drive-inventory.js when Composio's OpenRouter proxy isn't set up.",
-    "model": "google/gemini-3.1-flash-image-preview",
-    "openrouterApiKey": ""
+    "_comment": "Optional escape hatch: pin a specific Composio tool slug if MCP discovery picks the wrong one. Default leaves it blank and lets generate-slides.js find an OpenAI image-generation tool by pattern.",
+    "toolSlug": ""
   },
-  "imageHost": {
-    "_comment": "Only needed if a posting script ever needs a public-URL image host. Get a free key at https://api.imgbb.com (30 sec). Currently unused for Instagram carousel posts (image_file path handles hosting via Composio) — kept for future flows that need a public URL.",
-    "imgbbApiKey": ""
+  "research": {
+    "_comment": "Override the model used by weekly-research.js. Default: perplexity/sonar (web search built in). Routed through OPENROUTER_CHAT_COMPLETIONS via Composio MCP — the OpenRouter credential lives in the Composio project, not on this VM.",
+    "model": "perplexity/sonar"
   },
   "timezone": "Europe/Stockholm",
   "country": "SE",
   "posting": {
-    "schedule": ["11:00", "17:00", "20:30"]
+    "schedule": ["11:00"]
   },
   "paths": {
-    "baseDir": "social-marketing/",
-    "restaurantProfile": "social-marketing/restaurant-profile.json",
-    "knowledgeBaseDir": "social-marketing/knowledge-base/",
-    "posts": "social-marketing/posts/",
-    "reports": "social-marketing/reports/",
-    "trendReports": "social-marketing/reports/trend-reports/",
-    "competitorReports": "social-marketing/reports/competitor/",
-    "errors": "social-marketing/errors.json",
-    "hookPerformance": "social-marketing/hook-performance.json",
-    "skillUpdates": "social-marketing/skill-updates.json",
-    "strategy": "social-marketing/strategy.json",
-    "competitorResearch": "social-marketing/competitor-research.json"
+    "baseDir": "/data/social-marketing/",
+    "restaurantProfile": "/data/social-marketing/restaurant-profile.json",
+    "knowledgeBaseDir": "/data/social-marketing/knowledge-base/",
+    "posts": "/data/social-marketing/posts/",
+    "reports": "/data/social-marketing/reports/",
+    "trendReports": "/data/social-marketing/reports/trend-reports/",
+    "competitorReports": "/data/social-marketing/reports/competitor/",
+    "errors": "/data/social-marketing/errors.json",
+    "hookPerformance": "/data/social-marketing/hook-performance.json",
+    "skillUpdates": "/data/social-marketing/skill-updates.json",
+    "strategy": "/data/social-marketing/strategy.json",
+    "competitorResearch": "/data/social-marketing/competitor-research.json"
   }
 }
