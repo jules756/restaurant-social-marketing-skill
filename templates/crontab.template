@@ -9,8 +9,10 @@
 # set posting schedule, and change the Drive folder name. This crontab only
 # controls *when* jobs fire, not what they do.
 
-# Drive sync — every 30 min (cheap; only downloads new files).
-*/30 * * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/drive-sync.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/drive-sync.log 2>&1
+# Drive sync runs ON-DEMAND per post (called by content-preparation
+# Phase 3, with --dish "<name>" so dish photos are filtered to match).
+# It is NOT scheduled — restaurants don't add photos every 30 min, and
+# we'd rather pay the sync cost when generating, not idly.
 
 # Daily analytics — 08:00 every day. Writes a report file Hermes reads later.
 0 8 * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/daily-report.js --config {{AGENT_HOME}}/social-marketing/config.json --days 3 >> {{AGENT_HOME}}/social-marketing/logs/daily-report.log 2>&1

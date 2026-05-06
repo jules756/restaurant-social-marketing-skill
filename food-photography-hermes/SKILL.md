@@ -66,6 +66,47 @@ The upstream `session_id` concept becomes: **all 6 slides share the exact same b
 
 Slides that look like different restaurants break the narrative and kill completion rate.
 
+### Documentary / Lifestyle Vocabulary (the most important section)
+
+**The biggest mistake AI food gen makes is producing sterile product photography — six identical hero shots of the dish on a clean table with nobody around.** That kills the carousel. Real restaurant content tells a story with people in it. Use this vocabulary to push generations toward documentary food photography, not catalog photography.
+
+#### Anchors to use on every non-dish slide
+
+- `documentary food photography, candid moment`
+- `lifestyle composition, real moment in motion`
+- `phone snapshot from a real dinner, not staged`
+- `subjects in motion, slight motion blur`
+- `humans in the frame — hands, body language, faces partial`
+- `crops imply the rest of the scene — leave space for context`
+
+#### How to handle people
+
+- **Faces can be partial, blurred, three-quarter, over-shoulder, or out-of-frame.** Hands and body language carry the emotion; you do not need a sharp front-facing face. AI gen also tends to produce uncanny faces — partial faces are both more cinematic *and* lower-risk.
+- *"Two people seated at the table, one mid-laugh, faces softly out of focus, hands holding wine glasses, candlelight"* — this works.
+- *"Two people smiling at the camera"* — this fails (uncanny, staged, dead).
+- Specify number of people, age range, outfit register, posture. Don't specify exact features.
+
+#### What goes WHERE in a 6-slide carousel
+
+| Slide | What's in the frame | Dish present? | Humans? |
+|---|---|---|---|
+| 1 — hook | Anything that earns the swipe (object, character pre-context, place, detail, text-led — see [social-media-seo-hermes/references/hook-archetypes.md](../social-media-seo-hermes/references/hook-archetypes.md)) | Optional, usually no | Optional |
+| 2 — scene-set | Wide shot of the dining room with the characters seated | No | **Yes — required** |
+| 3 — dish-arrives | The dish landing on the table, server's hand visible, characters' faces lighting up | **Yes — the moment** | Yes (hands + reaction) |
+| 4 — the-bite | First-bite moment, fork twirl, candid mid-action | Yes (mid-eating, partial) | **Yes — required** |
+| 5 — connection | Mid-conversation, leaning in, candlelight; **dish off-frame or blurred in foreground** | No | **Yes — required** |
+| 6 — outro / CTA | Exterior at the right time of day, OR aftermath (empty plate, candle burning down, paid bill) | Optional (empty plate OK) | Optional |
+
+**Only slides 3 and 4 are dish-focused.** Five out of six slides are about the *experience*, the *place*, the *people*. This is what real restaurant Instagram does — the dish is a beat in the story, not the subject.
+
+#### Anti-patterns (never use these)
+
+- `professional food photography` — produces sterile catalog shots
+- `studio lighting` — wrong; restaurants have ambient lighting
+- `food on white background` — kills the venue context
+- `top-down flat lay` — overused, signals "Pinterest food blog"
+- `photorealistic` alone, with no human/motion anchor — defaults to product shots
+
 ### What NOT to Put in Prompts
 
 - No `text`, `watermark`, `logo`.

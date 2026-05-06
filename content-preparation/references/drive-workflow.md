@@ -1,65 +1,58 @@
 # Drive Workflow
 
-The restaurant's owner drops photos into a Google Drive folder (default name: `akira-agent_src`). Our pipeline uses them as **reference material** for image generation — the model re-interprets them in the restaurant's style, producing posts that look like the actual food without being copies.
+The owner organizes their Google Drive into **two folders**:
 
-## Sync
+- **One folder for dish photos.** Filenames matter — name them after the dish (`carbonara-1.jpg`, `cacio-pepe-tuesday.jpg`) so the skill can match a photo to a requested post.
+- **One folder for venue photos.** Dining room, exterior, bar, kitchen — anything that shows what the place looks like. Filenames don't matter here; the script picks one at random per post for variety.
+
+Folder names can vary by language and habit. The skill auto-detects names matching common patterns:
+
+- **Dishes folder**: `dishes`, `food`, `plats`, `plates`, `menu`, `cuisine`, `dish-photos`, `food-photos` (case-insensitive)
+- **Venue folder**: `venue`, `place`, `lieu`, `salle`, `decor`, `restaurant`, `interior`, `ambiance`, `space`, `room`, `dining-room`, `venue-photos` (case-insensitive)
+
+Resolution is cached in `config.googleDrive.resolvedFolders` after the first sync — subsequent runs skip the lookup. Pass `--refresh-folders` to re-detect (e.g. if the owner renamed a folder).
+
+## Sync (on-demand, per post)
 
 ```bash
-node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js --config $HOST_AGENT_HOME/social-marketing/config.json
+node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js \
+  --config $HOST_AGENT_HOME/social-marketing/config.json \
+  --dish "Carbonara"
 ```
 
 What it does:
-1. Connects to Drive via the Composio SDK using `config.composio.{apiKey, userId}`.
-2. Lists files in the folder (auto-creates the folder if missing — matches the client onboarding flow).
-3. Downloads each new image to `$HOST_AGENT_HOME/social-marketing/photos/unsorted/`.
-4. Appends file metadata to `$HOST_AGENT_HOME/social-marketing/photos/drive-index.json`.
+1. Resolves the Drive root folder (`config.googleDrive.folderName`).
+2. Auto-detects the dish + venue subfolders inside it.
+3. Lists images in each subfolder.
+4. Downloads new ones (skips files already cached, keyed by Drive file ID).
+5. Filters dish photos by `--dish "<name>"` using fuzzy filename matching.
+6. Writes `photos/last-sync.json` with absolute paths to `venuePhotos[]` and `dishPhotos[]`.
 
-Idempotent — re-running only pulls new files.
+`generate-slides.js` reads `last-sync.json` to pick references per slide:
+- One venue photo (random pick from the available pool — varies across posts) for slides 2–6
+- One dish photo (matched to `--dish`) for slides 3 and 4
 
-## Inventory (vision classification)
+## Hard Rules
+
+- **Venue photos are required.** If `last-sync.json` has zero venue photos, `generate-slides.js` exits with code 2 ("missing-venue-refs"). The orchestrator catches this and asks the owner to add venue photos. **The skill never proceeds to generation without venue references.**
+- **Dish photos are best-effort.** If no dish photo matches the requested dish name, the script falls back to any dish photo in the folder. If the dishes folder is empty entirely, slides 3–4 generate from text alone — degraded quality but not a hard fail.
+- **Drive photos are REFERENCES only.** They are not posted. The orchestrator's owner-facing language: *"I'll use them as references to generate posts that look like your space and your food"* — never *"I'll post your photos"*.
+
+## Why On-Demand, Not Cron
+
+Photos in a restaurant's Drive don't change every 30 minutes. Cron syncing is wasted work. Sync when actually generating: the cost is paid once per post, the latest photos are always picked up before generation, and there's no stale-cache problem.
+
+## One-Time Setup (Per Restaurant)
 
 ```bash
-node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-inventory.js --config $HOST_AGENT_HOME/social-marketing/config.json
+node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js \
+  --config $HOST_AGENT_HOME/social-marketing/config.json \
+  --refresh-folders
 ```
 
-What it does:
-1. For each photo in `drive-index.json` without a `category`, sends it to a vision tool over Composio MCP (the OpenAI credential lives in the Composio project — no key on the VM).
-2. Classifies each into `dish` / `ambiance` / `kitchen` / `exterior`, extracts `dishName` when the menu matches, scores quality (`high|medium|low`).
-3. Moves each file from `unsorted/` to the matching subdirectory.
-4. Writes the aggregated inventory to `$HOST_AGENT_HOME/social-marketing/photo-inventory.json`.
+Run once after the owner shares their Drive folder. This:
+1. Confirms the agent's Composio Google Drive connection works.
+2. Detects and persists the dish + venue subfolder IDs.
+3. Reports which subfolders were found.
 
-Pass `--full` to re-classify every photo (useful if the menu changed or a new dish was added).
-
-## Inventory Schema
-
-```json
-{
-  "lastUpdated": "2026-04-15",
-  "totalPhotos": 47,
-  "byDish": {
-    "Bolognese": {
-      "files": ["bolognese-1.jpg", "bolognese-2.jpg"],
-      "bestFile": "bolognese-2.jpg",
-      "quality": "high",
-      "lastUsed": "2026-04-10",
-      "usedInPosts": 3
-    }
-  },
-  "byCategory": {
-    "dish": 31,
-    "ambiance": 8,
-    "kitchen": 5,
-    "exterior": 3
-  },
-  "missing": ["desserts", "bar area"],
-  "note": "12 pasta photos, 0 dessert photos — trigger knowledge gap probe"
-}
-```
-
-`content-preparation` reads this on every post to decide img2img vs txt2img. The orchestrator reads `missing` to probe for gaps (via the knowledge-gap flow).
-
-## Rules
-
-- Drive photos are **references**, never post content. Never say *"I'll post your photos"* — wrong model. Always *"I'll use them as references to generate posts that look like your food"*.
-- If the folder is empty, that's fine — the pipeline falls back to txt2img with profile + knowledge-base context. Prompt the owner naturally to add photos when they have time, but never block posting on it.
-- Inventory write-back is non-destructive — it only adds/updates entries.
+If a subfolder is missing, the orchestrator asks the owner to create one with a recognized name.

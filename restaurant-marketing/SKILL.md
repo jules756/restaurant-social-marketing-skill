@@ -32,21 +32,28 @@ The owner sees: one short ack if it will take >20 sec (*"On it — about 1 minut
 Execution:
 
 1. `read_file`: `$HOST_AGENT_HOME/social-marketing/restaurant-profile.json`. Pick the dish (default: first signature dish, or one the owner mentioned).
-2. `memory`: pull recent hook performance for this restaurant.
-3. Delegate actual image generation to [content-preparation](../content-preparation/SKILL.md) — it owns the img2img vs txt2img decision, prompt construction (using [food-photography-hermes](../food-photography-hermes/SKILL.md) vocabulary), and hook/caption writing (using [social-media-seo-hermes](../social-media-seo-hermes/SKILL.md) library). Captions and hooks come from LLM reasoning, not hardcoded.
-4. content-preparation returns a directory with `slide-1.png` … `slide-6.png` + `caption.txt`.
-5. Attach all slides to Telegram by calling Hermes's native Telegram-send tool (or the Composio Telegram tool — Hermes owns the bot connection, the skill never touches `config.telegram` because that block doesn't exist). Send images as file attachments, not as text descriptions.
-6. Send the caption as a follow-up text message (same Bot API).
-7. Ask: *"Ready to post?"*
-8. On yes, for each enabled platform in `config.platforms`, invoke `terminal`:
+2. `memory`: pull recent hook performance + last 7 scenarios used (so [content-preparation](../content-preparation/SKILL.md) doesn't repeat).
+3. **Drive sync (per post, not cron).** Run `drive-sync.js --dish "<dish>"` so venue + dish refs are fresh:
+   ```bash
+   node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js \
+     --config $HOST_AGENT_HOME/social-marketing/config.json --dish "<dish>"
+   ```
+   - Exit 0: `photos/last-sync.json` written; safe to proceed.
+   - Exit 2: **no venue photos**. STOP. Tell the owner naturally: *"I need a few photos of your space first — add some to your Drive (the venue/dining-room folder), then we can post. The dish photos are great if you have them but those can come later."* Don't proceed.
+4. Delegate to [content-preparation](../content-preparation/SKILL.md). It picks a scenario from [social-media-seo-hermes/references/scenarios.md](../social-media-seo-hermes/references/scenarios.md) (excluding scenarios used in the last 7 posts), builds the 6-beat sceneArc per the blueprint (only 2 of 6 slides feature the dish; the rest tell the experience), writes prompts.json + texts.json, runs `generate-slides.js` and `add-text-overlay.js`. Captions and hooks come from LLM reasoning using the [hooks library](../social-media-seo-hermes/references/hooks.md), not hardcoded.
+5. content-preparation returns a directory with `slide-1.png` … `slide-6.png` + `caption.txt` + `metadata.json` (which records the scenario used).
+6. Attach all slides to Telegram by calling Hermes's native Telegram-send tool (or the Composio Telegram tool — Hermes owns the bot connection, the skill never touches `config.telegram` because that block doesn't exist). Send images as file attachments, not as text descriptions.
+7. Send the caption as a follow-up text message.
+8. Ask: *"Ready to post?"*
+9. On yes, for each enabled platform in `config.platforms`, invoke `terminal`:
    ```bash
    node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/post-to-<platform>.js \
      --config $HOST_AGENT_HOME/social-marketing/config.json \
      --dir $HOST_AGENT_HOME/social-marketing/posts/<timestamp>
    ```
    Each script prints a JSON line: `{"ok": true, "platform": "...", "mediaId": "...", "permalink": "..."}` on success, `{"ok": false, "error": "..."}` on failure. Parse the last line of stdout. Report results honestly to the owner — *"Posted to Instagram"* + permalink, or *"Instagram failed: [short reason]. Saved for retry."* Do not pretend success.
-9. `memory` append a record: `{ hookCategory, hookText, dish, platform, approach, timestamp, mediaId, permalink }`. This feeds future selection.
-10. TikTok posts as draft: *"Added the draft to your TikTok inbox. Pick a trending sound before publishing."*
+10. `memory` append a record: `{ scenario, characters, hookCategory, hookText, hookArchetype, dish, platform, timestamp, mediaId, permalink }`. The scenario field is critical — it's what the next post's scenario picker uses to avoid repetition within 7 days.
+11. TikTok posts as draft: *"Added the draft to your TikTok inbox. Pick a trending sound before publishing."*
 
 ### `generate pool`
 
