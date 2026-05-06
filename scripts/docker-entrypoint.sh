@@ -1,58 +1,79 @@
 #!/bin/bash
-# Per-agent container entrypoint.
+# Marketing-skill pre-start. Runs before the upstream Hermes entrypoint.
 #
-# Order of operations:
-#   1. If /data/social-marketing/config.json is missing, scaffold the
-#      directory layout from the template and stop (operator must edit).
-#   2. If config.composio.mcpServerUrl is empty, run setup.js to call
-#      composio.mcp.create() and persist the URL.
-#   3. Install cron jobs based on config.posting.schedule (best-effort).
-#   4. Hand off to Hermes.
+# Order of operations (each step idempotent — safe to re-run on every boot):
+#   1. Scaffold /opt/data/social-marketing/ if it's missing.
+#   2. Copy skills into /opt/data/skills/social-media/ so Hermes loads them.
+#   3. If config.composio.mcpServerUrl is empty, run setup.js to provision
+#      the MCP server (composio.mcp.create + persist URL).
+#   4. exec the upstream Hermes entrypoint with the original CMD args so
+#      Hermes itself starts normally.
 #
-# Failure mode: when the operator hasn't filled config.json yet, sleep
-# instead of crash-looping so they can `docker exec` in and edit.
+# When the operator hasn't filled config.json yet, we sleep so they can
+# `docker exec` in and edit, instead of crash-looping.
 
 set -euo pipefail
 
-CONFIG=/data/social-marketing/config.json
-DATA_ROOT=/data/social-marketing
+DATA_ROOT=/opt/data
+CONFIG="$DATA_ROOT/social-marketing/config.json"
+SKILL_SRC=/opt/hermes/social-marketing-skill
+HERMES_SKILLS="$DATA_ROOT/skills/social-media"
+HERMES_ENTRYPOINT=/opt/hermes/docker/entrypoint.sh
+
+echo "[marketing-pre-start] $(date -Is) — beginning"
+
+# 1. Scaffold the data dir and seed config from the template if missing.
+mkdir -p \
+  "$DATA_ROOT/social-marketing/photos/dishes" \
+  "$DATA_ROOT/social-marketing/photos/ambiance" \
+  "$DATA_ROOT/social-marketing/photos/kitchen" \
+  "$DATA_ROOT/social-marketing/photos/exterior" \
+  "$DATA_ROOT/social-marketing/photos/unsorted" \
+  "$DATA_ROOT/social-marketing/posts" \
+  "$DATA_ROOT/social-marketing/knowledge-base" \
+  "$DATA_ROOT/social-marketing/reports/trend-reports" \
+  "$DATA_ROOT/social-marketing/reports/competitor"
 
 if [ ! -f "$CONFIG" ]; then
-  echo "First boot: scaffolding $DATA_ROOT and copying config template."
-  mkdir -p \
-    "$DATA_ROOT/photos/dishes" \
-    "$DATA_ROOT/photos/ambiance" \
-    "$DATA_ROOT/photos/kitchen" \
-    "$DATA_ROOT/photos/exterior" \
-    "$DATA_ROOT/photos/unsorted" \
-    "$DATA_ROOT/posts" \
-    "$DATA_ROOT/knowledge-base" \
-    "$DATA_ROOT/reports/trend-reports" \
-    "$DATA_ROOT/reports/competitor"
-  cp /app/templates/config.template.json "$CONFIG"
-  echo "Edit $CONFIG to set Telegram + Composio credentials, then restart the container."
+  echo "[marketing-pre-start] no config — copying template to $CONFIG"
+  cp "$SKILL_SRC/templates/config.template.json" "$CONFIG"
+  cat <<EOF
+[marketing-pre-start] First boot. Edit $CONFIG to set:
+  - telegram.botToken + chatId
+  - composio.apiKey + composio.userId
+  - which platforms.* are enabled
+Then restart the container so setup.js runs.
+Sleeping (this container will not crash-loop).
+EOF
   exec sleep infinity
 fi
 
-# Provision the MCP server if it hasn't been done yet.
+# 2. Copy skill packs into HERMES_HOME so Hermes loads them at boot.
+# rsync would be ideal but the base image has cp; -a preserves perms.
+mkdir -p "$HERMES_SKILLS"
+cp -a "$SKILL_SRC/skills/." "$HERMES_SKILLS/" 2>/dev/null || true
+if [ -d "$SKILL_SRC/adapted-skills" ]; then
+  cp -a "$SKILL_SRC/adapted-skills/." "$HERMES_SKILLS/" 2>/dev/null || true
+fi
+echo "[marketing-pre-start] skills copied to $HERMES_SKILLS"
+
+# 3. If we don't have an MCP server URL yet, run setup to provision one.
 if [ -z "$(jq -r '.composio.mcpServerUrl // empty' "$CONFIG")" ]; then
-  echo "No mcpServerUrl in config; running setup.js."
-  node /app/scripts/setup.js --config "$CONFIG"
+  echo "[marketing-pre-start] no mcpServerUrl in config — running setup.js"
+  if ! node "$SKILL_SRC/scripts/setup.js" --config "$CONFIG"; then
+    echo "[marketing-pre-start] setup.js failed. Fix config + auth configs in the Composio dashboard, then restart."
+    echo "[marketing-pre-start] Sleeping so the container stays up for inspection."
+    exec sleep infinity
+  fi
 fi
 
-# Install cron jobs (best-effort — script may not exist or may already
-# have run; never fail the container boot on this).
-if [ -x /app/scripts/install-cron.sh ]; then
-  bash /app/scripts/install-cron.sh "$CONFIG" || true
+# 4. Install cron jobs (best-effort — never fail boot on this).
+if [ -x "$SKILL_SRC/scripts/install-cron.sh" ]; then
+  bash "$SKILL_SRC/scripts/install-cron.sh" "$CONFIG" || true
 fi
 
-# Hand off to Hermes. The base image doesn't ship Hermes; operators
-# either bake it into a derived image or install it before this point.
-# If `hermes` isn't on PATH, sleep so a human can investigate via exec.
-if command -v hermes >/dev/null 2>&1; then
-  exec hermes
-fi
-echo "WARNING: 'hermes' is not on PATH inside the container."
-echo "         Install it via the host (docker exec or a layered image),"
-echo "         then restart. Sleeping to keep the container alive."
-exec sleep infinity
+# 5. Hand off to Hermes. Note: tini already wrapped us, so the upstream
+# entrypoint runs as a child rather than re-PID-1 — that's fine; their
+# script invokes hermes_cli at the end.
+echo "[marketing-pre-start] handing off to Hermes entrypoint"
+exec "$HERMES_ENTRYPOINT" "$@"

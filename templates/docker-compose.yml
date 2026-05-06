@@ -6,13 +6,18 @@
 #   cp templates/docker-compose.yml /opt/agents/<company>-marketing/docker-compose.yml
 #   # edit container_name + the volume host path below
 #   docker compose up -d
+#
+# Layout matches the existing nousresearch/hermes-agent convention:
+#   - HERMES_HOME inside the container is /opt/data (set in the base image).
+#   - Host volume conventionally lives at ~/.hermes-agent-<name>/ to match
+#     other agents on the same VM.
 services:
   marketing-agent:
     image: restaurant-marketing:v4-alpha
     container_name: marketing-agent-CHANGE-ME
     restart: unless-stopped
     volumes:
-      - /var/lib/akira/CHANGE-ME/marketing:/data
+      - HOST_DATA_DIR:/opt/data
     environment:
       - TZ=Europe/Stockholm
     # No published ports: agent is outbound-only (Telegram + Composio MCP).

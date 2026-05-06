@@ -1,33 +1,41 @@
-# Per-agent Hermes container for the restaurant marketing skill (v4).
-# One container per Hermes agent (one company can run multiple agents);
-# /data is mounted from a host volume named after the agent.
+# Per-agent Hermes marketing container (v4).
+#
+# Layers this skill on top of the official Hermes image:
+#   - Hermes CLI, Python, Node 20, Playwright are already in the base.
+#   - HERMES_HOME=/opt/data (mounted from the host).
+#   - Hermes's own entrypoint at /opt/hermes/docker/entrypoint.sh.
+#
+# We add: this skill's scripts, npm deps, node-canvas system libs, and a
+# pre-start script that scaffolds the data dir + provisions the MCP
+# server before delegating to Hermes's entrypoint.
 
-FROM node:18-alpine
+FROM nousresearch/hermes-agent:latest
 
-# canvas build deps + Hermes runtime utilities. apk pulls latest patch
-# levels at build time; pin upstream if you need fully reproducible builds.
-RUN apk add --no-cache \
-    python3 make g++ \
-    cairo-dev pango-dev jpeg-dev giflib-dev librsvg-dev \
-    bash curl jq tini
+# node-canvas (text-overlay) + jq (entrypoint config inspection).
+# Hermes base is Ubuntu 24.04. apt is available; install the deb deps.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev \
+      build-essential python3 \
+      jq \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Skill scripts + node modules live alongside Hermes's tree, not under
+# /opt/data (which is the host-mounted volume — gets overwritten at run).
+WORKDIR /opt/hermes/social-marketing-skill
 
-# Dependencies first for layer caching.
+# Install npm deps first for layer caching.
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Repo body. .dockerignore drops node_modules, .git, docs, tests.
+# Repo body. .dockerignore prunes node_modules, .git, docs, tests.
 COPY . .
 
-# /data is the per-agent volume mount point (config.json, photos,
-# posts, knowledge-base all live here).
-VOLUME ["/data"]
+# Pre-start script: scaffolds /opt/data/social-marketing on first boot,
+# runs setup.js when mcpServerUrl is empty, copies skills into HERMES_HOME,
+# then exec's the upstream Hermes entrypoint with the original CMD.
+RUN cp scripts/docker-entrypoint.sh /usr/local/bin/marketing-pre-start.sh \
+ && chmod +x /usr/local/bin/marketing-pre-start.sh
 
-# Hermes ships as a CLI installed at runtime by the entrypoint, so the
-# image stays generic across agent kinds. The entrypoint also runs
-# setup.js on first boot when mcpServerUrl is missing.
-COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+# Override Hermes's entrypoint with our pre-start; it tail-calls Hermes's
+# own entrypoint at the end so the rest of the boot is identical.
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/marketing-pre-start.sh"]
