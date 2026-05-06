@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-05-06T10:21:53.680Z",
+  "platform": "instagram",
+  "aspect": "4:5 portrait",
+  "urgency": "fast",
+  "approach": "txt2img",
+  "model": "gpt-image-2",
+  "dish": "Truffle Risotto",
+  "referencePhoto": null,
+  "slidesGenerated": 6,
+  "slidesFailed": 0,
+  "s3keys": {
+    "slide-5": "384853/openai/OPENAI_CREATE_IMAGE/response/d91cb52e7cca59a96632b022eb7421f0"
+  }
+}

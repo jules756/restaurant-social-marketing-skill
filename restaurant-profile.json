@@ -1,0 +1,28 @@
+{
+  "name": "Bistro Lumière",
+  "cuisine": "French-Italian fusion",
+  "city": "Stockholm",
+  "language": "en",
+  "vibe": "cozy candlelit neighborhood bistro with open kitchen",
+  "signatureDishes": [
+    {
+      "name": "Truffle Risotto",
+      "description": "Creamy Arborio rice with black truffle shavings and parmesan crisp",
+      "visualDetail": "Steam rising, warm golden tones, matte ceramic plate"
+    },
+    {
+      "name": "Slow-braised Lamb Shank",
+      "description": "Fall-off-the-bone lamb in red wine reduction with rosemary",
+      "visualDetail": "Rich burgundy sauce, rustic cast iron, herb garnish"
+    }
+  ],
+  "typicalGuest": "Couples aged 28-45, booking date nights or casual Friday dinners",
+  "bookingMethod": "website",
+  "bookingUrl": "https://bistrolumiere.example.com/book",
+  "imageStyleNotes": "",
+  "platforms": {
+    "instagram": { "enabled": true },
+    "tiktok": { "enabled": false },
+    "facebook": { "enabled": false }
+  }
+}

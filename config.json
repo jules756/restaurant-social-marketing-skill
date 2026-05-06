@@ -1,0 +1,39 @@
+{
+  "platforms": {
+    "instagram": {
+      "enabled": true,
+      "aspect": "4:5",
+      "igUserId": "34824861763795379"
+    },
+    "tiktok": {
+      "enabled": false,
+      "aspect": "9:16"
+    },
+    "facebook": {
+      "enabled": false,
+      "aspect": "16:9"
+    }
+  },
+  "country": "SE",
+  "telegram": {
+    "botToken": "",
+    "chatId": ""
+  },
+  "googleDrive": {
+    "enabled": true,
+    "folderName": "akira-agent_src"
+  },
+  "openrouter": {
+    "apiKey": ""
+  },
+  "composio": {
+    "apiKey": "ak_T8jeqCepgfPZ25WU4eMh",
+    "userId": "pg-test-b6bKUL98nP9rcoEmT0wtY37Uc2aD5BNf",
+    "mcpServerUrl": "https://backend.composio.dev/v3/mcp/9e37562b-219a-4283-b48f-639b71577199?include_composio_helper_actions=true&user_id=pg-test-b6bKUL98nP9rcoEmT0wtY37Uc2aD5BNf",
+    "mcpServerId": "9e37562b-219a-4283-b48f-639b71577199",
+    "imageGenMcpUrl": "https://backend.composio.dev/v3/mcp/9e37562b-219a-4283-b48f-639b71577199?include_composio_helper_actions=true&user_id=pg-test-1611c589-17b9-4ce2-896b-e58a2c7e8dd7"
+  },
+  "imageGen": {
+    "toolSlug": "OPENAI_CREATE_IMAGE"
+  }
+}
