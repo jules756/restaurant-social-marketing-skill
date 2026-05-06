@@ -87,11 +87,12 @@ if (seedIdx === -1) {
   console.error('prompts.json sceneArc must mark exactly one beat as isCharacterSeed (typically slide 2 / scene-set).');
   process.exit(1);
 }
-// Soft-validate the dish-only-on-2-slides rule.
+// Soft-validate the dish-mostly-on-2-slides rule.
 const dishSlides = prompts.sceneArc.filter((b) => b.useDishRef).length;
-if (dishSlides > 3) {
-  console.warn(`⚠ sceneArc has ${dishSlides} dish-focused beats. Blueprint allows max 2 (slides 3 + 4). Generating anyway, but consider revising.`);
+if (dishSlides > 2) {
+  console.warn(`⚠ sceneArc has ${dishSlides} dish-focused beats. Blueprint targets max 2 (only for postType=dish-feature, on slides 3+4). For non-dish post types, expect 0-1. Generating anyway.`);
 }
+const postType = prompts.postType || '(unspecified)';
 
 fs.mkdirSync(outputDir, { recursive: true });
 
@@ -309,16 +310,25 @@ function refsForBeat(beat, characterSeedPath) {
     : 'restaurant';
 
   console.log(`\nGenerating ${prompts.sceneArc.length}-slide carousel for ${restaurantName}`);
-  console.log(`  scenario: ${prompts.scenario || '(unspecified)'}  platform: ${platform}  size: ${PLATFORM_SIZE[platform]}`);
+  console.log(`  postType: ${postType}  scenario: ${prompts.scenario || '(unspecified)'}  platform: ${platform}  size: ${PLATFORM_SIZE[platform]}`);
   console.log(`  venue ref: ${venueRef}`);
-  console.log(`  dish ref:  ${dishRef || '(none — using txt for dish content)'}`);
+  console.log(`  dish ref:  ${dishRef || '(none — slides with useDishRef will txt-only the dish content)'}`);
   console.log(`  concurrency: ${concurrency}\n`);
 
   const state = readState(outputDir) || {
-    status: 'pending', slides: [], scenario: prompts.scenario,
+    status: 'pending', slides: [],
+    postType: prompts.postType || null,
+    postIdea: prompts.postIdea || null,
+    scenario: prompts.scenario,
+    dish: prompts.dish || null,
     characters: prompts.characters, mood: prompts.mood,
     platform, createdAt: new Date().toISOString(),
   };
+  // Always update these (in case state existed but the new run uses different values)
+  state.postType = prompts.postType || state.postType || null;
+  state.postIdea = prompts.postIdea || state.postIdea || null;
+  state.scenario = prompts.scenario || state.scenario;
+  state.dish = prompts.dish || state.dish || null;
   state.slides = state.slides || [];
   state.venueRef = venueRef;
   state.dishRef = dishRef;
@@ -387,9 +397,12 @@ function refsForBeat(beat, characterSeedPath) {
 
   fs.writeFileSync(path.join(outputDir, 'metadata.json'), JSON.stringify({
     generatedAt: state.generatedAt,
+    postType: prompts.postType || null,
+    postIdea: prompts.postIdea || null,
     scenario: prompts.scenario,
     characters: prompts.characters,
     mood: prompts.mood,
+    dish: prompts.dish || null,
     platform, aspect: hints.aspect, urgency, model,
     venueRef, dishRef,
     slidesGenerated: success, slidesFailed: failed,

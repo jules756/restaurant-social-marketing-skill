@@ -37,8 +37,12 @@ const hasFlag = (name) => args.includes(`--${name}`);
 
 const configPath = getArg('config');
 const dishName = getArg('dish');
+const skipDish = hasFlag('no-dish');     // post types that don't need any dish refs (vibe-moment, neighborhood, etc.)
 const refreshFolders = hasFlag('refresh-folders');
-if (!configPath) { console.error('Usage: node drive-sync.js --config <config.json> [--dish "<name>"] [--refresh-folders]'); process.exit(1); }
+if (!configPath) {
+  console.error('Usage: node drive-sync.js --config <config.json> [--dish "<name>"] [--no-dish] [--refresh-folders]');
+  process.exit(1);
+}
 
 const config = loadConfig(configPath);
 const drive = config.googleDrive;
@@ -223,7 +227,9 @@ function fuzzyMatchDish(localPaths, dishName) {
   const folders = await resolveFolders();
 
   const venuePhotos = await syncFolder(folders.venue, venueCacheDir, 'venue');
-  const dishPhotos = await syncFolder(folders.dishes, dishesCacheDir, 'dishes');
+  const dishPhotos = skipDish
+    ? (console.log('  dishes: skipped (--no-dish)'), [])
+    : await syncFolder(folders.dishes, dishesCacheDir, 'dishes');
 
   // Hard rule: venue photos are required for image generation. If the
   // venue folder is missing or empty, write last-sync.json with empty

@@ -23,18 +23,39 @@ metadata.json                    — { scenario, contentType, dish, hookCategory
 
 ## The 6-Beat Blueprint (Hard Contract)
 
-Every carousel follows the same 6-beat structure. **Only slides 3 and 4 are dish-focused.** The rest tell the experience. This is what real restaurant Instagram does — the dish is a beat in the story, not the subject of it.
+Every carousel follows the same 6-beat structure. **Slides 1, 2, 5, 6 are structurally fixed.** **Slides 3 and 4 shift based on the `postType` of this post** — see "Beats 3-4 by post type" below.
 
 | # | Beat | Job | Dish ref? | Venue ref? | Character ref? |
 |---|---|---|---|---|---|
 | 1 | **Hook** | Earn the swipe. Anything pattern-interrupting. | ❌ optional | ❌ optional | ❌ no |
-| 2 | **Scene-set** *(character seed)* | Establish: this restaurant, these people, this night. Wide shot of the dining room with characters seated. | ❌ | ✅ required | ❌ (this slide *creates* the character ref) |
-| 3 | **Dish-arrives** | The dish lands on the table. Server's hand, characters' faces lighting up. | ✅ required | ✅ | ✅ (slide 2) |
-| 4 | **The-bite** | First-bite moment. Hands, fork, motion, mid-laugh. | ✅ required (mid-eating, partial) | ✅ | ✅ (slide 2) |
-| 5 | **Connection** | Mid-conversation, leaning in, candlelight. **Dish off-frame.** | ❌ | ✅ | ✅ (slide 2) |
-| 6 | **Outro / CTA** | Exterior at the right time of day, OR aftermath (empty plate, candle burning, paid bill). | ❌ optional (empty plate OK) | ✅ | ✅ optional |
+| 2 | **Scene-set** *(character seed)* | Establish: this restaurant, these people, this night. Wide shot with characters seated or arriving. | ❌ | ✅ required | ❌ (this slide *creates* the character ref) |
+| 3 | **(Varies by postType — see table below)** | The first thrust of the post idea. | varies | ✅ | ✅ (slide 2) |
+| 4 | **(Varies by postType — see table below)** | The payoff or follow-through. | varies | ✅ | ✅ (slide 2) |
+| 5 | **Connection** | Mid-conversation, leaning in, candlelight. **Dish off-frame** unless the postType makes it weird. | ❌ usually | ✅ | ✅ (slide 2) |
+| 6 | **Outro / CTA** | Exterior at the right time of day, OR aftermath (empty plate, candle burning, paid bill). | ❌ optional | ✅ | ✅ optional |
 
-**This contract is non-negotiable.** Dish on 2 of 6 slides, venue on 5 of 6, character continuity across 5 of 6. If you write a sceneArc with the dish on more than 2 slides, you're producing the dead "dish-dish-dish-dish" carousels we explicitly don't want.
+**Venue refs are required on slides 2-6 (5 of 6). Character continuity required across slides 2-6.** If venue refs are missing entirely, fail to the orchestrator — the skill never proceeds without venue references.
+
+## Beats 3-4 by Post Type
+
+Slides 3-4 are where the post's `postType` actually shapes the content. Pick from this table — the LLM (in `auto-post.js`) or the orchestrator (in manual `/post`) picks the postType first, then the corresponding beat-3-4 pair.
+
+| postType | Slide 3 | Slide 4 | useDishRef? |
+|---|---|---|---|
+| `dish-feature` | Dish lands on table, server's hand, characters reacting | First-bite moment, fork twirl, motion, partial faces | ✅ both slides |
+| `vibe-moment` | A specific moment in the night (toast, glance across the table, candlelight on faces) | A connection moment (laugh, lean-in, hands meeting) | ❌ neither |
+| `behind-the-scenes` | The craft moment: chef's hands working (plating, finishing, dusting), kitchen action, motion | The payoff: finished plate appearing OR service starting OR the team a moment before opening | ✅ slide 4 only (optional) |
+| `story` | Story illustration #1 — the source (old recipe handwritten, the place the recipe came from, the chef's grandmother's photo if available, archival texture) | Story illustration #2 — the present-day execution (the dish today, the chef now, the same dish made the same way) | ✅ slide 4 only (optional) |
+| `seasonal` | The seasonal trigger: ingredient peak (first asparagus, first mushrooms), weather (rain on the window, snow outside), calendar moment (candles for a holiday) | The dish or service moment that responds to the season | ✅ slide 4 (optional) |
+| `regular` | The regular arriving / their order being prepared / their usual table being set | Them mid-meal, in their usual spot, candid | ✅ slide 4 (optional, if their order is the visual anchor) |
+| `neighborhood` | Local landmark, street scene, view from the door — the *area* | The restaurant within that context (window-lit at dusk, awning, exterior at the right time of day) | ❌ neither |
+| `promo` | The promo dish or element (or the calendar/urgency visual for last-chance posts) | People enjoying the promo OR the value-reveal moment | ✅ both (when applicable) |
+| `trend-driven` | Trend execution shot #1 (depends on the trend — could be a transition, a meme format, a specific composition) | Trend execution shot #2 | varies |
+| `event` | Event setup, arrival, the menu / collab artifact | Event in full swing — people enjoying, room full, energy at peak | ✅ slide 4 (optional) |
+
+**Anti-pattern**: If you find yourself writing all 6 beats around the dish (3+ slides with `useDishRef: true`), the postType is wrong. Pick a different postType or move dish content to slides 3-4 only.
+
+Full taxonomy with selection logic + healthy mix: [social-media-seo-hermes/references/post-types.md](../social-media-seo-hermes/references/post-types.md).
 
 ---
 
@@ -49,39 +70,81 @@ Every carousel follows the same 6-beat structure. **Only slides 3 and 4 are dish
 
 ## Pass-by-Pass Execution
 
-### Phase 0: Pick the scenario
+### Phase 0: Pick the post type, then the scenario, then (if relevant) the dish
 
-Load [social-media-seo-hermes/references/scenarios.md](../social-media-seo-hermes/references/scenarios.md) via `skill_view('social-media-seo-hermes', 'references/scenarios.md')`.
+A daily restaurant feed is not a dish catalog. Real restaurants post about *moments*, *people*, *story*, *neighborhood*, *seasonality*, *behind-the-scenes* — the dish is one beat in many possible posts, not the subject of every post.
 
-Pick **one scenario** based on:
-- Day of week + time (Friday 8pm → `friend-night-dinner` or `date-night`; Sunday 1pm → `family-sunday`; Wednesday 1pm → `solo-lunch-pause`)
-- Dish character (rich pasta → social/comfort; light salad → solo/lunch; shared plates → group)
-- `memory` of the last 7 scenarios used for this restaurant — **never repeat a scenario within 7 days**
-- `trend-report.json` if a scenario type is hot
-- Owner cues from the orchestrator's brief (*"post about tonight's special"* → infer dinner)
+**Step 1 — Pick `postType`** from [social-media-seo-hermes/references/post-types.md](../social-media-seo-hermes/references/post-types.md). 10 types: `dish-feature`, `vibe-moment`, `behind-the-scenes`, `story`, `seasonal`, `regular`, `neighborhood`, `promo`, `trend-driven`, `event`. Healthy mix: ~30-40% dish-feature, ~20-30% vibe-moment, rest spread across the others.
 
-Output: `{ scenario: "friend-night-dinner", characters: "Two women, late 20s, casual-stylish — one in colorful top, one in earth tones", mood: "Warm laughter, candid, leaning in", time: "Dinner, 8pm" }`.
+Selection priority:
+1. Active promo in window (check `promotions/*.json`) → `promo`
+2. Event in next 7 days → `event` for at least one of the lead-up posts
+3. Cold start (zero or near-zero post history) → fixed sequence: `vibe-moment` → `dish-feature` → `behind-the-scenes` → `story` → `vibe-moment`
+4. Otherwise — pick weighted by recent post-type history (avoid back-to-back same type; never 3 of the same type in 5 posts), day/time, season/weather, what's underserved
+
+**Step 2 — Pick `scenario`** from [scenarios.md](../social-media-seo-hermes/references/scenarios.md) based on day-of-week + time + the postType.
+- Never repeat a scenario within 7 days (`memory` lookup).
+- `dish-feature` + Friday dinner = `friend-night-dinner` or `date-night`
+- `behind-the-scenes` + weekday morning = the chef-prep scenarios
+- `vibe-moment` + Tuesday lunch = `solo-lunch-pause`
+
+**Step 3 — Pick `dish` (or null)**:
+- For `postType: dish-feature` → pick a signature dish from `restaurant-profile.signatureDishes` (rotate, never repeat within 7 days)
+- For `postType: promo / event / seasonal / story` → pick if there's an obvious dish anchor; null otherwise
+- For `postType: vibe-moment / behind-the-scenes / regular / neighborhood / trend-driven` → null is fine; the post is about something else
+
+Output: `{ postType, scenario, characters, mood, time, dish: <name | null> }`.
 
 ### Phase 1: Build the 6-beat sceneArc
 
-For the chosen scenario, write 6 beats following the blueprint above. Each beat is one specific moment within the scenario.
+For the chosen `postType` + `scenario`, write 6 beats. Slides 1, 2, 5, 6 are structurally fixed across all post types. Slides 3, 4 come from the postType→beats-3-4 table above.
 
-Example (friend-night-dinner + carbonara):
+Example A — `dish-feature` + `friend-night-dinner` + Carbonara:
 
 ```json
 {
   "sceneArc": [
     { "beat": "hook",         "archetype": "detail",  "moment": "Hand twirling pasta on a fork in low candlelight, motion blur, abstract close-up", "useDishRef": false, "useVenueRef": false, "useCharacterRef": false },
-    { "beat": "scene-set",    "moment": "Two women just sat down at a candlelit table, dining room behind them with other guests soft-focused, one pouring wine for the other", "useDishRef": false, "useVenueRef": true,  "useCharacterRef": false, "isCharacterSeed": true },
+    { "beat": "scene-set",    "moment": "Two women just sat down at a candlelit table, dining room behind, one pouring wine for the other", "useDishRef": false, "useVenueRef": true,  "useCharacterRef": false, "isCharacterSeed": true },
     { "beat": "dish-arrives", "moment": "Server's hand placing the carbonara on the table, both women leaning in, faces lighting up, candlelight on the plate", "useDishRef": true,  "useVenueRef": true, "useCharacterRef": true },
-    { "beat": "the-bite",     "moment": "One twirls pasta on her fork, mid-laugh, the other watching with a fork in hand, fork in motion blur", "useDishRef": true,  "useVenueRef": true, "useCharacterRef": true },
-    { "beat": "connection",   "moment": "Both leaning over the table mid-conversation, wine glasses, hands gesturing, dish off-frame, candlelight on faces", "useDishRef": false, "useVenueRef": true, "useCharacterRef": true },
-    { "beat": "outro",        "moment": "Outside the restaurant after, golden hour fading, both women hugging goodbye, warm restaurant windows behind them", "useDishRef": false, "useVenueRef": true, "useCharacterRef": true }
+    { "beat": "the-bite",     "moment": "One twirls pasta on her fork, mid-laugh, the other watching, fork in motion blur", "useDishRef": true,  "useVenueRef": true, "useCharacterRef": true },
+    { "beat": "connection",   "moment": "Both leaning over the table mid-conversation, wine glasses, hands gesturing, dish off-frame", "useDishRef": false, "useVenueRef": true, "useCharacterRef": true },
+    { "beat": "outro",        "moment": "Outside the restaurant after, golden hour, both hugging goodbye, warm windows behind", "useDishRef": false, "useVenueRef": true, "useCharacterRef": true }
   ]
 }
 ```
 
-Slide 1 archetype options (pick based on the hook line you'll write in Phase 2): see [social-media-seo-hermes/references/hook-archetypes.md](../social-media-seo-hermes/references/hook-archetypes.md). Five archetypes: object, character-pre-context, place, detail, text-led.
+Example B — `behind-the-scenes` + the chef's morning, no specific dish:
+
+```json
+{
+  "sceneArc": [
+    { "beat": "hook",         "archetype": "object", "moment": "An empty kitchen pass at 6am, single lamp on, copper pans hanging — implies what's coming", "useDishRef": false, "useVenueRef": false, "useCharacterRef": false },
+    { "beat": "scene-set",    "moment": "The chef tying her apron at the kitchen counter, soft morning light from a side window, prep station behind her", "useDishRef": false, "useVenueRef": true,  "useCharacterRef": false, "isCharacterSeed": true },
+    { "beat": "craft-1",      "moment": "Hands kneading dough on a wooden surface, flour on forearms, motion blur — pure craft", "useDishRef": false, "useVenueRef": true, "useCharacterRef": true },
+    { "beat": "craft-2",      "moment": "The same chef at the pass, plating something with tweezers, focused, kitchen warmth", "useDishRef": true, "useVenueRef": true, "useCharacterRef": true },
+    { "beat": "connection",   "moment": "First guest of the day being greeted at the door — the work just paid off", "useDishRef": false, "useVenueRef": true, "useCharacterRef": true },
+    { "beat": "outro",        "moment": "Restaurant exterior at golden hour, warm light through the windows", "useDishRef": false, "useVenueRef": true, "useCharacterRef": false }
+  ]
+}
+```
+
+Example C — `neighborhood` + Sunday afternoon, no characters tied to dish:
+
+```json
+{
+  "sceneArc": [
+    { "beat": "hook",         "archetype": "place",  "moment": "The restaurant's neighborhood street at golden hour, light from windows, a couple walking by", "useDishRef": false, "useVenueRef": true, "useCharacterRef": false },
+    { "beat": "scene-set",    "moment": "View from inside the front window looking out — same street, blurred figures outside, our wood tables foreground", "useDishRef": false, "useVenueRef": true,  "useCharacterRef": false, "isCharacterSeed": true },
+    { "beat": "neighborhood-1", "moment": "Detail of a local landmark a block away — the church spire, the cobblestones, the iconic block", "useDishRef": false, "useVenueRef": false, "useCharacterRef": false },
+    { "beat": "neighborhood-2", "moment": "Restaurant exterior with awning, golden hour, our character archetype walking up to the door", "useDishRef": false, "useVenueRef": true, "useCharacterRef": true },
+    { "beat": "connection",   "moment": "Inside, the couple now seated, candlelight, the street view through the window behind them", "useDishRef": false, "useVenueRef": true, "useCharacterRef": true },
+    { "beat": "outro",        "moment": "Exterior again, dusk now, warm windows lit, full of people — a place worth coming to", "useDishRef": false, "useVenueRef": true, "useCharacterRef": false }
+  ]
+}
+```
+
+Slide 1 archetype options: see [social-media-seo-hermes/references/hook-archetypes.md](../social-media-seo-hermes/references/hook-archetypes.md).
 
 ### Phase 2: Write the hook line + overlays
 
@@ -94,32 +157,39 @@ Write 6 overlay texts (4–6 words, max 10 words):
 
 ### Phase 3: Run drive-sync (on-demand, per post)
 
-Drive sync now runs *per post*, not on a schedule. Pull the dish photo and venue photos for this post:
+Drive sync runs *per post*, not on a schedule. Pull venue photos always; dish photos only when the post needs them.
 
 ```bash
+# When postType uses dish refs (dish-feature, promo, sometimes story/seasonal/event):
 node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js \
   --config $HOST_AGENT_HOME/social-marketing/config.json \
   --dish "<dish name>"
+
+# When postType doesn't need dish refs (vibe-moment, behind-the-scenes, regular, neighborhood, trend-driven):
+node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js \
+  --config $HOST_AGENT_HOME/social-marketing/config.json
 ```
 
-Output: list of dish photo paths + venue photo paths cached locally. The script writes these into `$HOST_AGENT_HOME/social-marketing/photos/last-sync.json`.
+Output: `$HOST_AGENT_HOME/social-marketing/photos/last-sync.json` with `venuePhotos[]` + (optionally) `dishPhotos[]`.
 
-**If the venue photos folder is empty, fail loud and return to the orchestrator.** The orchestrator should tell the owner: *"I need a few photos of your space first — add them to the venue folder in your Drive."* Do not proceed to image generation without venue refs.
+**If the venue folder is empty, fail loud and return to the orchestrator** (exit code 2). The orchestrator should tell the owner: *"I need a few photos of your space first — add them to the venue folder in your Drive."*
 
-Dish photos are best-effort: if no dish photo matches the requested dish name (filename match, fuzzy), the orchestrator gets a soft warning and we proceed using a generic dish prompt.
+When `--dish` is omitted, no dish-photo filtering happens; if the sceneArc has any `useDishRef: true` beats anyway, those slides will txt-only-generate the dish content (degraded but not a hard fail).
 
 ### Phase 4: Build prompts.json
 
-Write the new schema to `/tmp/prompts-<ts>.json`:
+Write to `/tmp/prompts-<ts>.json`. The `dish` field is `null` when there's no specific dish for this post.
 
 ```json
 {
+  "postType": "dish-feature",
+  "postIdea": "Friday-night carbonara with two friends — the cozy trattoria moment",
   "scenario": "friend-night-dinner",
   "characters": "Two women, late 20s, casual-stylish",
   "mood": "Warm laughter, candid, motion-rich",
   "venue": { "name": "Rodolfino", "vibe": "intimate trattoria, candlelight, exposed brick" },
   "dish": "Carbonara",
-  "base": "<shared base description: documentary food photography, candid moment, smartphone-candid feel, [lighting preset from food-photography-hermes], [scenario mood], real human moments — see food-photography-hermes/SKILL.md for the documentary anchors>",
+  "base": "<base description: documentary food photography anchors + scenario mood + lighting preset from food-photography-hermes>",
   "sceneArc": [
     { "beat": "hook", "archetype": "detail", "moment": "...", "useDishRef": false, "useVenueRef": false, "useCharacterRef": false },
     { "beat": "scene-set", "moment": "...", "useDishRef": false, "useVenueRef": true, "useCharacterRef": false, "isCharacterSeed": true },
@@ -130,6 +200,8 @@ Write the new schema to `/tmp/prompts-<ts>.json`:
   ]
 }
 ```
+
+For non-dish post types (`vibe-moment`, `behind-the-scenes`, etc.), `dish: null` and the sceneArc has zero or one `useDishRef: true` beat (or none). See the postType→beats-3-4 table above for which slides use the dish ref.
 
 Texts file:
 
@@ -177,11 +249,12 @@ Write to `$HOST_AGENT_HOME/social-marketing/posts/<timestamp>/caption.txt`.
 ```json
 {
   "generatedAt": "<ISO>",
-  "scenario": "friend-night-dinner",
-  "characters": "Two women, late 20s, casual-stylish",
-  "contentType": "<regular|promo|knowledge-story|trend|spontaneous>",
+  "postType": "<from post-types.md>",
+  "postIdea": "<one-sentence what this post is about>",
+  "scenario": "<scenario archetype>",
+  "characters": "<one sentence>",
   "platform": "<tiktok|instagram|facebook>",
-  "dish": "<dish name>",
+  "dish": "<dish name or null>",
   "hookCategory": "<from hooks.md>",
   "hookText": "<exact slide 1 text>",
   "hookArchetype": "<from hook-archetypes.md>",
@@ -190,7 +263,7 @@ Write to `$HOST_AGENT_HOME/social-marketing/posts/<timestamp>/caption.txt`.
 }
 ```
 
-`memory` indexes this for performance correlation.
+`memory` indexes this for performance correlation. The `postType` field is critical — it's what the next post's planner uses to avoid back-to-back same-type posts.
 
 ### Phase 9: Return to orchestrator
 
@@ -248,8 +321,9 @@ Full details: [references/drive-workflow.md](references/drive-workflow.md).
 
 These are the failures we explicitly designed against. If you find yourself producing any of these, stop:
 
-- **Six dish-focused slides.** The carousel must be ~2 dish slides + ~4 experience slides.
+- **Every post is a dish-feature.** The feed must mix post types. Roughly 30-40% dish-feature, the rest spread across vibe-moment, behind-the-scenes, story, neighborhood, etc. — see [post-types.md](../social-media-seo-hermes/references/post-types.md). Dish-rotating is dish-catalog content, not restaurant content.
+- **Three or more dish-focused slides in one post.** The blueprint is dish on 2 of 6 slides max — and only when `postType` is `dish-feature` (or one of the few others where dish refs apply). For non-dish post types, 0-1 dish slides.
 - **No people in the carousel.** Slides 2, 3, 4, 5 must include human presence (hands, faces partial, motion). Slide 6 can be peopled or aftermath.
 - **Different characters across slides.** Slides 2–6 must feature the same archetype of people (vibe-match, not face-replica).
-- **Generic stock-photo restaurant.** Every slide must feel like *this* restaurant — venue refs are mandatory on 5 of 6 slides.
+- **Generic stock-photo restaurant.** Every slide must feel like *this* restaurant — venue refs are mandatory on slides 2-6.
 - **Catalog/product photography style.** No `professional food photography`, no `studio lighting`, no white backgrounds. Use the documentary anchors in [food-photography-hermes/SKILL.md](../food-photography-hermes/SKILL.md).
