@@ -5,28 +5,28 @@ The restaurant's owner drops photos into a Google Drive folder (default name: `a
 ## Sync
 
 ```bash
-node ~/restaurant-social-marketing-skill/scripts/drive-sync.js --config ~/social-marketing/config.json
+node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js --config $HOST_AGENT_HOME/social-marketing/config.json
 ```
 
 What it does:
 1. Connects to Drive via the Composio SDK using `config.composio.{apiKey, userId}`.
 2. Lists files in the folder (auto-creates the folder if missing — matches the client onboarding flow).
-3. Downloads each new image to `~/social-marketing/photos/unsorted/`.
-4. Appends file metadata to `~/social-marketing/photos/drive-index.json`.
+3. Downloads each new image to `$HOST_AGENT_HOME/social-marketing/photos/unsorted/`.
+4. Appends file metadata to `$HOST_AGENT_HOME/social-marketing/photos/drive-index.json`.
 
 Idempotent — re-running only pulls new files.
 
 ## Inventory (vision classification)
 
 ```bash
-node ~/restaurant-social-marketing-skill/scripts/drive-inventory.js --config ~/social-marketing/config.json
+node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-inventory.js --config $HOST_AGENT_HOME/social-marketing/config.json
 ```
 
 What it does:
 1. For each photo in `drive-index.json` without a `category`, sends it to a vision tool over Composio MCP (the OpenAI credential lives in the Composio project — no key on the VM).
 2. Classifies each into `dish` / `ambiance` / `kitchen` / `exterior`, extracts `dishName` when the menu matches, scores quality (`high|medium|low`).
 3. Moves each file from `unsorted/` to the matching subdirectory.
-4. Writes the aggregated inventory to `~/social-marketing/photo-inventory.json`.
+4. Writes the aggregated inventory to `$HOST_AGENT_HOME/social-marketing/photo-inventory.json`.
 
 Pass `--full` to re-classify every photo (useful if the menu changed or a new dish was added).
 

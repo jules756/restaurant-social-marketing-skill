@@ -1,22 +1,25 @@
-# Restaurant Social Marketing — scheduled jobs
-# Installed by install.sh. {{HOME}} and {{SKILL_DIR}} are replaced at install time.
-# All times are in the VM's local timezone (set via the OS, not this file).
+# Restaurant Social Marketing — scheduled jobs (per-agent).
+# Installed by install.sh. {{AGENT_HOME}} and {{SKILL_DIR}} are replaced at install time.
+# All times are in the VM's local timezone (set via the OS).
 #
-# Edit ~/social-marketing/config.json to enable/disable platforms, set posting schedule,
-# and change the Drive folder name. This crontab only controls *when* jobs fire, not what
-# they do.
+# Each agent has its own crontab section, tagged with the agent name in
+# install.sh. Multiple agents on one VM each have their own block.
+#
+# Edit {{AGENT_HOME}}/social-marketing/config.json to enable/disable platforms,
+# set posting schedule, and change the Drive folder name. This crontab only
+# controls *when* jobs fire, not what they do.
 
 # Drive sync — every 30 min (cheap; only downloads new files).
-*/30 * * * * cd {{HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/drive-sync.js --config {{HOME}}/social-marketing/config.json >> {{HOME}}/social-marketing/logs/drive-sync.log 2>&1
+*/30 * * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/drive-sync.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/drive-sync.log 2>&1
 
-# Daily analytics report — 08:00 every day. Owner sees a Telegram summary.
-0 8 * * * cd {{HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/daily-report.js --config {{HOME}}/social-marketing/config.json --days 3 >> {{HOME}}/social-marketing/logs/daily-report.log 2>&1
+# Daily analytics — 08:00 every day. Writes a report file Hermes reads later.
+0 8 * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/daily-report.js --config {{AGENT_HOME}}/social-marketing/config.json --days 3 >> {{AGENT_HOME}}/social-marketing/logs/daily-report.log 2>&1
 
-# Weekly trend research — Monday 07:00. Writes trend-report.json + a narrative MD.
-0 7 * * 1 cd {{HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/weekly-research.js --config {{HOME}}/social-marketing/config.json >> {{HOME}}/social-marketing/logs/weekly-research.log 2>&1
+# Weekly trend research — Monday 07:00. Writes trend-report.json + narrative MD.
+0 7 * * 1 cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/weekly-research.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/weekly-research.log 2>&1
 
-# Weekly competitor research — Monday 07:30. Writes competitor-research.json + a narrative MD.
-30 7 * * 1 cd {{HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/competitor-research.js --config {{HOME}}/social-marketing/config.json >> {{HOME}}/social-marketing/logs/competitor-research.log 2>&1
+# Weekly competitor research — Monday 07:30. Writes competitor-research.json + narrative MD.
+30 7 * * 1 cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/competitor-research.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/competitor-research.log 2>&1
 
 # Daily aggregator — 23:30. Roll up the day's events.
-30 23 * * * cd {{HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/aggregator.js --config {{HOME}}/social-marketing/config.json >> {{HOME}}/social-marketing/logs/aggregator.log 2>&1
+30 23 * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/aggregator.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/aggregator.log 2>&1

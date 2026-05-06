@@ -1,28 +1,25 @@
 #!/usr/bin/env node
 /**
- * Module B — Weekly trend research cron.
+ * Weekly trend research cron.
  *
- * Runs every Monday at 09:00 (config.timezone). Uses a web-search-enabled
+ * Runs every Monday (per crontab.template) using a web-search-enabled
  * model via OpenRouter (perplexity/sonar by default) to research trending
  * formats, platform updates, and local market signals for the restaurant's
- * cuisine + city. Synthesises findings into a structured trend report +
- * narrative Markdown, then sends a Telegram summary with the 3 actions for
- * the week.
+ * cuisine + city. Writes a structured trend-report.json + a narrative
+ * Markdown that Hermes can read and surface to the owner.
  *
  * Usage:
  *   node weekly-research.js --config <config.json>
- *     [--dry-run] [--no-notify] [--model <openrouter-model>]
+ *     [--dry-run] [--model <openrouter-model>]
  *
- * --dry-run   Research + write files, skip Telegram + don't overwrite the
- *             canonical trend-report.json (keeps old one).
- * --no-notify Skip Telegram.
+ * --dry-run   Research + write narrative, but don't overwrite the canonical
+ *             trend-report.json.
  * --model     Override research model. Default: perplexity/sonar (cheap,
  *             web search built in). Alternatives: perplexity/sonar-pro,
  *             google/gemini-2.5-flash:online, openai/gpt-4o-mini:online.
  *
  * Output (stdout, last line is JSON):
- *   {"ok": true, "weekOf": "YYYY-MM-DD", "actions": 3,
- *    "reportPath": "...", "telegramNotified": true}
+ *   {"ok": true, "weekOf": "YYYY-MM-DD", "actions": 3, "reportPath": "..."}
  */
 
 const fs = require('fs');
@@ -38,11 +35,10 @@ const hasFlag = (name) => args.includes(`--${name}`);
 
 const configPath = getArg('config');
 const dryRun = hasFlag('dry-run');
-const notifyTelegram = !hasFlag('no-notify');
 const modelOverride = getArg('model');
 
 if (!configPath) {
-  console.error('Usage: node weekly-research.js --config <config.json> [--dry-run] [--no-notify] [--model <slug>]');
+  console.error('Usage: node weekly-research.js --config <config.json> [--dry-run] [--model <slug>]');
   process.exit(1);
 }
 
@@ -83,27 +79,6 @@ function readRestaurantProfile() {
     return JSON.parse(fs.readFileSync(abs, 'utf-8'));
   } catch {
     return null;
-  }
-}
-
-async function sendTelegram(text) {
-  const token = config.telegram?.botToken;
-  const chatId = config.telegram?.chatId;
-  if (!token || !chatId) return false;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true
-      })
-    });
-    return (await res.json()).ok === true;
-  } catch {
-    return false;
   }
 }
 
@@ -280,13 +255,8 @@ function formatTelegramSummary(report, profile) {
   writeNarrative({ report, citations, model, profile });
   if (!dryRun) writeCanonicalJson({ report, citations, model });
 
-  const summary = formatTelegramSummary(report, profile);
-
-  let notified = false;
-  if (!dryRun && notifyTelegram) {
-    notified = await sendTelegram(summary);
-  }
-
+  // The weekly trend report is written to disk; Hermes (which holds the
+  // Telegram connection) reads it and surfaces highlights to the owner.
   console.log(JSON.stringify({
     ok: true,
     weekOf,
@@ -294,7 +264,6 @@ function formatTelegramSummary(report, profile) {
     actions: (report.recommendedActions || []).length,
     upcomingDates: (report.upcomingDates || []).length,
     citations: citations.length,
-    telegramNotified: notified,
     reportPath: narrativePath,
     canonicalJsonPath: dryRun ? null : canonicalJsonPath
   }));

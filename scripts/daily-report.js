@@ -15,7 +15,7 @@
  *
  * Output (stdout, last line is JSON):
  *   {"ok": true, "yesterdayPosts": N, "yesterdayReach": M, "trend": "up|flat|down",
- *    "telegramNotified": true, "reportPath": "..."}
+ *    "reportPath": "..."}
  */
 
 const fs = require('fs');
@@ -32,9 +32,8 @@ const hasFlag = (name) => args.includes(`--${name}`);
 const configPath = getArg('config');
 const days = parseInt(getArg('days', '7'), 10);
 const dryRun = hasFlag('dry-run');
-const notifyTelegram = !hasFlag('no-notify');
 if (!configPath) {
-  console.error('Usage: node daily-report.js --config <config.json> [--days 7] [--no-notify] [--dry-run]');
+  console.error('Usage: node daily-report.js --config <config.json> [--days 7] [--dry-run]');
   process.exit(1);
 }
 
@@ -59,27 +58,6 @@ const hookPath = path.isAbsolute(hookRoot)
 function fail(msg) {
   console.log(JSON.stringify({ ok: false, error: msg }));
   process.exit(1);
-}
-
-async function sendTelegram(text) {
-  const token = config.telegram?.botToken;
-  const chatId = config.telegram?.chatId;
-  if (!token || !chatId) return false;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true
-      })
-    });
-    return (await res.json()).ok === true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -289,11 +267,8 @@ function appendHookPerformance(posts) {
 
   if (!dryRun) appendHookPerformance(allPosts);
 
-  let notified = false;
-  if (!dryRun && notifyTelegram) {
-    notified = await sendTelegram(`📊 *Daily report — ${todayStr}*\n\n${summary}`);
-  }
-
+  // The report is written to disk; Hermes (which holds the Telegram
+  // connection) reads it and decides when/how to surface to the owner.
   console.log(JSON.stringify({
     ok: true,
     yesterdayPosts: yesterday.count,
@@ -301,7 +276,6 @@ function appendHookPerformance(posts) {
     baselineReach: Math.round(baseline.reach),
     trend: trendDirection(yesterday.reach, baseline.reach),
     topPostReach: top?.reach || 0,
-    telegramNotified: notified,
     reportPath
   }));
 })();

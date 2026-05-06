@@ -1,19 +1,15 @@
 {
   "name": "restaurant-social-marketing-skill",
-  "version": "4.0.0-alpha.1",
+  "version": "4.0.0",
   "private": true,
-  "description": "Hermes skill suite for restaurant social media marketing. v4: per-agent Composio MCP server + gpt-image-2.",
+  "description": "Hermes skill: restaurant social media marketing. Posts to Instagram/Facebook/TikTok via Composio MCP, syncs photos from Drive, generates slideshow images via gpt-image-2.",
   "engines": { "node": ">=18" },
   "dependencies": {
     "@composio/core": "^0.6.10",
-    "@modelcontextprotocol/sdk": "^1.0.0"
-  },
-  "optionalDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "canvas": "^2.11.2"
   },
   "scripts": {
-    "setup": "node scripts/setup.js --config ${SOCIAL_MARKETING_CONFIG:-/data/social-marketing/config.json}",
-    "syntax-check": "for f in scripts/*.js; do node -c \"$f\" || exit 1; done",
-    "test": "node tests/test-mcp-client.js"
+    "syntax-check": "for f in scripts/*.js; do node -c \"$f\" || exit 1; done"
   }
 }

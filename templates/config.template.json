@@ -1,15 +1,12 @@
 {
-  "_comment": "Installer-only file. Restaurant info comes from the owner via Telegram onboarding → restaurant-profile.json. v4: every external call goes through the per-agent Composio MCP server. The OpenAI key for gpt-image-2 lives in the Composio project, not on this VM.",
-  "telegram": {
-    "botToken": "",
-    "chatId": ""
-  },
+  "_comment": "Skill-install template. Restaurant info comes from the owner via Telegram onboarding → restaurant-profile.json. Every external call goes through the per-agent Composio MCP server. {{AGENT_HOME}} is replaced by install.sh with the agent's data dir (~/agents/<agent>/social-marketing). Telegram is configured inside Hermes itself via 'hermes setup' — not here.",
   "composio": {
-    "_comment": "apiKey is your Composio project API key. userId is a per-agent identifier (e.g. 'rodolfino-marketing'). mcpServerUrl + mcpServerId are written by setup.js after composio.mcp.create() — leave blank.",
+    "_comment": "apiKey: your Composio project API key. defaultUserId: per-agent identifier used for most toolkits (e.g. 'rodolfino-marketing'). userIdOverrides: only fill in if a specific toolkit needs a different userId — Composio sometimes forces splits (e.g. OpenAI on its own userId, or OpenRouter separate from OAuth toolkits). Add overrides as you discover them. Toolkit slugs match Composio's: 'openai', 'openrouter', 'gmail', 'googledrive', 'instagram', 'facebook', 'tiktok'. mcpServerUrls is filled in by setup.js — leave blank.",
     "apiKey": "",
-    "userId": "",
-    "mcpServerUrl": "",
-    "mcpServerId": ""
+    "defaultUserId": "",
+    "userIdOverrides": {},
+    "mcpServerUrls": {},
+    "mcpServerIds": {}
   },
   "platforms": {
     "instagram": { "enabled": false },
@@ -19,8 +16,8 @@
   "googleDrive": {
     "enabled": false,
     "folderName": "akira-agent_src",
-    "localCachePath": "/data/social-marketing/photos/",
-    "inventoryPath": "/data/social-marketing/photo-inventory.json"
+    "localCachePath": "{{AGENT_HOME}}/social-marketing/photos/",
+    "inventoryPath": "{{AGENT_HOME}}/social-marketing/photo-inventory.json"
   },
   "analytics": {
     "bookingTracking": { "method": "manual", "dailyBaseline": 0 },
@@ -31,7 +28,7 @@
     "toolSlug": ""
   },
   "research": {
-    "_comment": "Override the model used by weekly-research.js. Default: perplexity/sonar (web search built in). Routed through OPENROUTER_CHAT_COMPLETIONS via Composio MCP — the OpenRouter credential lives in the Composio project, not on this VM.",
+    "_comment": "Override the model used by weekly-research.js. Default: perplexity/sonar (web search built in). Routed through OPENROUTER_CHAT_COMPLETIONS via Composio MCP.",
     "model": "perplexity/sonar"
   },
   "timezone": "Europe/Stockholm",
@@ -40,17 +37,17 @@
     "schedule": ["11:00"]
   },
   "paths": {
-    "baseDir": "/data/social-marketing/",
-    "restaurantProfile": "/data/social-marketing/restaurant-profile.json",
-    "knowledgeBaseDir": "/data/social-marketing/knowledge-base/",
-    "posts": "/data/social-marketing/posts/",
-    "reports": "/data/social-marketing/reports/",
-    "trendReports": "/data/social-marketing/reports/trend-reports/",
-    "competitorReports": "/data/social-marketing/reports/competitor/",
-    "errors": "/data/social-marketing/errors.json",
-    "hookPerformance": "/data/social-marketing/hook-performance.json",
-    "skillUpdates": "/data/social-marketing/skill-updates.json",
-    "strategy": "/data/social-marketing/strategy.json",
-    "competitorResearch": "/data/social-marketing/competitor-research.json"
+    "baseDir": "{{AGENT_HOME}}/social-marketing/",
+    "restaurantProfile": "{{AGENT_HOME}}/social-marketing/restaurant-profile.json",
+    "knowledgeBaseDir": "{{AGENT_HOME}}/social-marketing/knowledge-base/",
+    "posts": "{{AGENT_HOME}}/social-marketing/posts/",
+    "reports": "{{AGENT_HOME}}/social-marketing/reports/",
+    "trendReports": "{{AGENT_HOME}}/social-marketing/reports/trend-reports/",
+    "competitorReports": "{{AGENT_HOME}}/social-marketing/reports/competitor/",
+    "errors": "{{AGENT_HOME}}/social-marketing/errors.json",
+    "hookPerformance": "{{AGENT_HOME}}/social-marketing/hook-performance.json",
+    "skillUpdates": "{{AGENT_HOME}}/social-marketing/skill-updates.json",
+    "strategy": "{{AGENT_HOME}}/social-marketing/strategy.json",
+    "competitorResearch": "{{AGENT_HOME}}/social-marketing/competitor-research.json"
   }
 }

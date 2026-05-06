@@ -1,21 +1,29 @@
 /**
- * MCP client wrapper. Connects to the per-agent Composio MCP server
- * recorded in config.composio.mcpServerUrl, caches the connection +
- * tool list for the process lifetime, and exposes a tiny surface:
+ * MCP client wrapper with per-userId routing.
  *
- *   listTools(config)              → array of { name, description, inputSchema }
- *   callTool(config, name, args)   → tool result (parsed JSON if the tool returned text)
- *   findToolByPattern(config, re)  → first tool whose name matches the regex
- *   resetForTests()                → drop cached state (test-only)
+ * Composio sometimes requires splitting toolkits across multiple userIds
+ * (e.g. OpenAI on its own, OAuth toolkits on another). Each unique userId
+ * gets its own MCP server URL, recorded in config.composio.mcpServerUrls
+ * by setup.js (keyed by userId).
  *
- * No SDK calls. No hardcoded tool slugs. Schemas come from the server.
+ * Resolution: tool name → userId (looked up in route cache built during
+ * listTools) → MCP server URL → cached MCP client.
+ *
+ *   listTools(config, userId?)            → tools advertised by that userId's server
+ *   listAllTools(config)                   → tools across every configured userId
+ *   findToolByPattern(config, re)          → { tool, userId } for first match
+ *   callTool(config, name, args)           → routes to the right server by tool name
+ *   resetCache()                           → drop cached state
+ *
+ * No SDK calls. No hardcoded tool slugs. Schemas come from the servers.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-let _connectPromise = null;
-let _toolsCache = null;
+const _clientByUserId = new Map();   // userId → connected MCP client (Promise)
+const _toolsByUserId = new Map();    // userId → tool list
+const _toolToUserId = new Map();     // tool name → userId (route cache)
 
 function loadConfig(configPath) {
   const resolved = path.resolve(configPath);
@@ -23,66 +31,142 @@ function loadConfig(configPath) {
   return JSON.parse(fs.readFileSync(resolved, 'utf-8'));
 }
 
-function connectMcp(config) {
-  if (_connectPromise) return _connectPromise;
-  const url = config.composio?.mcpServerUrl;
-  const apiKey = config.composio?.apiKey;
-  if (!url) return Promise.reject(new Error('config.composio.mcpServerUrl is required. Run `node scripts/setup.js --config <path>` first.'));
-  if (!apiKey) return Promise.reject(new Error('config.composio.apiKey is required. Set it in config.json or run `node scripts/setup.js --config <path>` first.'));
+/**
+ * Map a toolkit slug to the userId that owns it for this agent.
+ * Falls back to defaultUserId if no override is set.
+ */
+function resolveUserIdForToolkit(config, toolkitSlug) {
+  const overrides = config.composio?.userIdOverrides || {};
+  return overrides[toolkitSlug.toLowerCase()] || config.composio?.defaultUserId;
+}
 
-  _connectPromise = (async () => {
+/**
+ * The set of unique userIds this agent uses. setup.js iterates this set
+ * to create one MCP server per unique userId.
+ */
+function uniqueUserIds(config) {
+  const ids = new Set();
+  if (config.composio?.defaultUserId) ids.add(config.composio.defaultUserId);
+  for (const id of Object.values(config.composio?.userIdOverrides || {})) {
+    if (id) ids.add(id);
+  }
+  return [...ids];
+}
+
+/**
+ * Connect to the MCP server for a specific userId.
+ */
+function connectMcp(config, userId) {
+  const cached = _clientByUserId.get(userId);
+  if (cached) return cached;
+
+  const apiKey = config.composio?.apiKey;
+  const url = config.composio?.mcpServerUrls?.[userId];
+  if (!apiKey) return Promise.reject(new Error('config.composio.apiKey is required.'));
+  if (!url) return Promise.reject(new Error(
+    `No MCP server URL for userId "${userId}". Run setup.js to provision: ` +
+    `node scripts/setup.js --config <path>`
+  ));
+
+  const promise = (async () => {
     const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
     const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
-
     const transport = new StreamableHTTPClientTransport(new URL(url), {
       requestInit: { headers: { 'x-api-key': apiKey } }
     });
-    const client = new Client({ name: 'restaurant-marketing', version: '4.0.0' }, { capabilities: {} });
+    const client = new Client(
+      { name: `restaurant-marketing/${userId}`, version: '4.0.0' },
+      { capabilities: {} }
+    );
     await client.connect(transport);
     return client;
   })();
-  return _connectPromise;
+
+  _clientByUserId.set(userId, promise);
+  return promise;
 }
 
-async function listTools(config) {
-  if (_toolsCache) return _toolsCache;
-  const client = await connectMcp(config);
+/**
+ * List tools for one userId (or defaultUserId if unspecified).
+ * Cached per userId. Side effect: indexes tool name → userId for callTool.
+ */
+async function listTools(config, userId) {
+  const targetUserId = userId || config.composio?.defaultUserId;
+  if (!targetUserId) throw new Error('No userId given and config.composio.defaultUserId is empty.');
+  const cached = _toolsByUserId.get(targetUserId);
+  if (cached) return cached;
+  const client = await connectMcp(config, targetUserId);
   const res = await client.listTools();
-  _toolsCache = res.tools || [];
-  return _toolsCache;
+  const tools = res.tools || [];
+  _toolsByUserId.set(targetUserId, tools);
+  for (const t of tools) _toolToUserId.set(t.name, targetUserId);
+  return tools;
 }
 
+/**
+ * Aggregate tools across every userId this agent uses.
+ */
+async function listAllTools(config) {
+  const userIds = uniqueUserIds(config);
+  if (!userIds.length) throw new Error('No userIds in config.composio.');
+  const all = [];
+  for (const id of userIds) {
+    const tools = await listTools(config, id);
+    for (const t of tools) all.push({ ...t, _userId: id });
+  }
+  return all;
+}
+
+/**
+ * Find a tool whose name matches a regex, scanning every userId.
+ * Returns { tool, userId } or null.
+ */
 async function findToolByPattern(config, re) {
-  const tools = await listTools(config);
-  return tools.find((t) => re.test(t.name)) || null;
+  for (const userId of uniqueUserIds(config)) {
+    const tools = await listTools(config, userId);
+    const tool = tools.find((t) => re.test(t.name));
+    if (tool) return { tool, userId };
+  }
+  return null;
 }
 
+/**
+ * Call a tool by name. Routes to the right userId's server automatically
+ * based on the route cache built during listTools.
+ */
 async function callTool(config, name, args = {}) {
-  const client = await connectMcp(config);
+  let userId = _toolToUserId.get(name);
+  if (!userId) {
+    await listAllTools(config);
+    userId = _toolToUserId.get(name);
+    if (!userId) throw new Error(`Tool "${name}" is not exposed by any configured userId.`);
+  }
+  const client = await connectMcp(config, userId);
   const res = await client.callTool({ name, arguments: args });
-  // MCP wraps tool output in `content` blocks. Most Composio tools return a
-  // single text block holding JSON; surface the parsed object so callers
-  // don't every-time-write the same unwrap.
   if (Array.isArray(res?.content)) {
     const text = res.content.find((c) => c.type === 'text')?.text;
     if (text) {
-      try {
-        return JSON.parse(text);
-      } catch (e) {
-        throw new Error(`Tool ${name} returned non-JSON text: ${text.slice(0, 200)}`);
-      }
+      try { return JSON.parse(text); }
+      catch (e) { throw new Error(`Tool ${name} returned non-JSON text: ${text.slice(0, 200)}`); }
     }
   }
   return res;
 }
 
 function resetCache() {
-  _connectPromise = null;
-  _toolsCache = null;
+  _clientByUserId.clear();
+  _toolsByUserId.clear();
+  _toolToUserId.clear();
 }
 
-// Back-compat alias for the test that imports the old name. Production
-// code (setup.js) uses `resetCache` for clarity.
-const resetForTests = resetCache;
-
-module.exports = { loadConfig, connectMcp, listTools, findToolByPattern, callTool, resetCache, resetForTests };
+module.exports = {
+  loadConfig,
+  connectMcp,
+  listTools,
+  listAllTools,
+  findToolByPattern,
+  callTool,
+  resolveUserIdForToolkit,
+  uniqueUserIds,
+  resetCache,
+};

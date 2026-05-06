@@ -1,45 +1,42 @@
 #!/usr/bin/env node
 /**
- * Post a generated slide set to TikTok as a photo slideshow DRAFT (via Composio).
+ * Stage 3 (TikTok variant): post a generated slide set to TikTok as a
+ * photo carousel.
+ *
+ * Per the Composio TikTok toolkit, TIKTOK_POST_PHOTO requires HTTPS URLs
+ * from a TikTok-verified domain. Local file paths are not accepted —
+ * unverified URLs return 403.
+ *
+ * Until verified-domain hosting is wired up, this script:
+ *   - With config.platforms.tiktok.verifiedDomain set: maps slide files
+ *     to URLs by joining the domain + a public path the user has set up
+ *     (config.platforms.tiktok.publicPath, default "/posts/").
+ *     Caller is responsible for uploading the slides to that path before
+ *     running this script.
+ *   - Without verifiedDomain: warns and exits 0 with a "skipped" status.
+ *     The post still completes for Instagram/Facebook.
+ *
+ * Reads state.json. Writes state.tiktok.{publishId, status, postedAt}.
  *
  * Usage:
- *   node post-to-tiktok.js --config ~/social-marketing/config.json --dir ~/social-marketing/posts/<YYYY-MM-DD-HHmm>
- *
- * Expects in --dir:
- *   slide-1.png … slide-N.png   (up to 35 slides — TikTok's hard limit)
- *   caption.txt
- *
- * Output (stdout, last line is machine-readable JSON):
- *   {"ok": true, "draftId": "...", "platform": "tiktok", "mode": "draft"}
- *
- * The post lands in the owner's TikTok inbox as a DRAFT — they must add a
- * trending sound and publish manually. This is intentional: music is the
- * single biggest algorithm factor on TikTok.
+ *   node post-to-tiktok.js --config <config.json> --dir <post-dir> [--dry-run]
  */
 
 const fs = require('fs');
 const path = require('path');
-const { callTool, loadConfig, findToolByPattern } = require('./mcp-client');
+const { callTool, loadConfig } = require('./mcp-client');
+const { readState, writeState } = require('./state-helpers');
 
 const args = process.argv.slice(2);
-const getArg = (name) => {
-  const i = args.indexOf(`--${name}`);
-  return i !== -1 ? args[i + 1] : null;
-};
+const getArg = (name) => { const i = args.indexOf(`--${name}`); return i !== -1 ? args[i + 1] : null; };
 const hasFlag = (name) => args.includes(`--${name}`);
 
 const configPath = getArg('config') || `${process.env.HOME}/social-marketing/config.json`;
 const dir = getArg('dir');
 const dryRun = hasFlag('dry-run');
 
-function fail(msg) {
-  console.log(JSON.stringify({ ok: false, platform: 'tiktok', error: msg }));
-  process.exit(1);
-}
-function dryLog(label, obj) {
-  console.log(`[DRY-RUN] ${label}: ${JSON.stringify(obj)}`);
-}
-
+function emit(payload) { console.log(JSON.stringify(payload)); }
+function fail(msg) { emit({ ok: false, platform: 'tiktok', error: msg }); process.exit(1); }
 if (!dir) fail('--dir is required');
 
 (async () => {
@@ -47,70 +44,71 @@ if (!dir) fail('--dir is required');
     const config = loadConfig(configPath);
     if (!config.platforms?.tiktok?.enabled) fail('TikTok is not enabled in config.platforms.tiktok');
 
-    const postDir = path.resolve(dir);
-    const slides = [];
-    for (let i = 1; i <= 35; i++) {
-      const finalP = path.join(postDir, `slide-${i}.png`);
-      const rawP = path.join(postDir, `slide-${i}-raw.png`);
-      if (fs.existsSync(finalP)) slides.push(finalP);
-      else if (fs.existsSync(rawP)) slides.push(rawP);
+    const verifiedDomain = config.platforms?.tiktok?.verifiedDomain;
+    if (!verifiedDomain) {
+      // Warn and skip — let the rest of the pipeline succeed for IG/FB.
+      const note = 'TikTok photo carousels require a TikTok-verified domain. ' +
+                   'Set config.platforms.tiktok.verifiedDomain (e.g. "https://media.your-restaurant.com") ' +
+                   'and upload slides to it before posting. Skipping for now.';
+      console.error(`⚠ ${note}`);
+      emit({ ok: true, platform: 'tiktok', skipped: true, reason: 'no verified domain' });
+      return;
     }
-    if (slides.length === 0) fail(`No slide-*.png found in ${postDir}`);
+
+    const postDir = path.resolve(dir);
+    const state = readState(postDir);
+    if (!state) fail(`No state.json in ${postDir}`);
+
+    const slides = (state.slides || [])
+      .filter((s) => s.overlaid && s.final)
+      .map((s) => s.final);
+    if (slides.length === 0) fail(`No overlaid slides ready in ${postDir}`);
+    if (slides.length > 35) {
+      console.error(`  ℹ trimming to 35 slides (TikTok max)`);
+      slides.length = 35;
+    }
+
+    const publicPath = config.platforms?.tiktok?.publicPath || '/posts/';
+    const postSegment = path.basename(postDir);
+    const photoUrls = slides.map((file) =>
+      `${verifiedDomain.replace(/\/$/, '')}${publicPath}${postSegment}/${file}`
+    );
 
     const captionPath = path.join(postDir, 'caption.txt');
     const caption = fs.existsSync(captionPath) ? fs.readFileSync(captionPath, 'utf-8').trim() : '';
 
     if (dryRun) {
-      slides.forEach((s) => dryLog('upload_slide', path.basename(s)));
-      dryLog('post_as_draft', { tool: 'TIKTOK_POST_PHOTO', privacy: 'SELF_ONLY', slide_count: slides.length, caption_preview: caption.slice(0, 80) });
-      console.log(JSON.stringify({
-        ok: true,
-        platform: 'tiktok',
-        mode: 'draft',
-        dryRun: true,
-        slidesPosted: slides.length
-      }));
+      console.log(`[DRY-RUN] verified domain: ${verifiedDomain}`);
+      photoUrls.forEach((u) => console.log(`  - ${u}`));
+      console.log(`[DRY-RUN] caption: ${caption.slice(0, 80)}…`);
+      emit({ ok: true, platform: 'tiktok', dryRun: true, slidesPosted: slides.length });
       return;
     }
 
-    // Pass each slide as an absolute file path. Composio MCP hosts the
-    // file server-side and gives TikTok a URL it trusts (same pattern
-    // as Instagram's image_file). No client-side upload step.
-    const slidePaths = slides.map((s) => path.resolve(s));
+    // TIKTOK_POST_PHOTO with the verified-domain URLs.
+    const result = await callTool(config, 'TIKTOK_POST_PHOTO', {
+      photo_images: photoUrls,
+      photo_cover_index: 0,
+      title: caption.slice(0, 90),
+      description: caption,
+      privacy_level: 'SELF_ONLY',          // post lands as draft; owner adds music + publishes
+      post_mode: 'DIRECT_POST',
+      auto_add_music: false,
+    });
+    const publishId = result?.data?.publish_id || result?.publish_id || result?.data?.id;
+    if (!publishId) throw new Error(`TIKTOK_POST_PHOTO returned no publish_id: ${JSON.stringify(result).slice(0, 400)}`);
 
-    // TIKTOK_POST_PHOTO accepts the file paths + caption + draft privacy.
-    // Different tool versions have used slightly different field names; the
-    // multi-shape retry mirrors the v3 behavior. With MCP discovery in
-    // place, future cleanup can pick a single shape from the tool schema.
-    const payloads = [
-      { photo_images: slidePaths, post_info: { title: caption, privacy_level: 'SELF_ONLY' } },
-      { images: slidePaths, caption, privacy: 'SELF_ONLY', is_draft: true },
-      { image_urls: slidePaths, title: caption, privacy_level: 'SELF_ONLY' }
-    ];
+    state.tiktok = state.tiktok || {};
+    state.tiktok.publishId = publishId;
+    state.tiktok.status = 'submitted';
+    state.tiktok.postedAt = new Date().toISOString();
+    writeState(postDir, state);
 
-    let lastError, result;
-    for (const payload of payloads) {
-      try {
-        result = await callTool(config, 'TIKTOK_POST_PHOTO', payload);
-        if (result && !result.error) break;
-      } catch (e) {
-        lastError = e;
-      }
-    }
-    if (!result || result.error) {
-      throw new Error(`All TikTok post payload shapes failed. Last: ${lastError?.message || result?.error || 'unknown'}`);
-    }
-
-    const draftId = result.data?.publish_id || result.data?.draft_id || result.data?.id || result.id;
-
-    console.log(JSON.stringify({
-      ok: true,
-      platform: 'tiktok',
-      mode: 'draft',
-      draftId: draftId || null,
-      slidesPosted: slides.length,
-      note: 'Owner must add trending sound in TikTok inbox and publish manually.'
-    }));
+    emit({
+      ok: true, platform: 'tiktok', mode: 'draft',
+      publishId, slidesPosted: slides.length,
+      note: 'Owner must add trending sound and publish from TikTok inbox.',
+    });
   } catch (e) {
     fail(e.message);
   }

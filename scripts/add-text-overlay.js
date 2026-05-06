@@ -1,44 +1,34 @@
 #!/usr/bin/env node
 /**
- * Add text overlays to slide images.
+ * Stage 2: render text overlays onto slide-N-raw.png → slide-N.png.
  *
- * Primary: node-canvas (proven). PRD notes html-to-image as a potential cleaner
- * option — if adopted later, swap the rendering layer behind this same CLI.
+ * Mandatory: node-canvas must be installed. We do NOT silently fall back
+ * to copying the raw file (caused the inconsistent overlay bug in v3).
+ *
+ * Reads state.json from the post directory, only operates on slides
+ * that have generated=true. Marks them overlaid=true on success.
  *
  * Usage:
  *   node add-text-overlay.js \
- *     --input social-marketing/posts/YYYY-MM-DD-HHmm/ \
- *     --texts texts.json
- *
- * texts.json: ["Slide 1 text", "Slide 2 text", ...] — length must match slides.
- *
- * Overlay rules enforced:
- *   - Reactions, not labels.
- *   - 4–6 words per line, 3–4 lines per slide (wrap if needed).
- *   - No emoji (stripped if present).
- *   - Safe zones: no text in top 10% or bottom 20%.
- *   - Slide 6 (if TikTok format) is the CTA slide — caller passes the CTA string.
- *
- * Reads slide-N-raw.png, writes slide-N.png.
+ *     --input <posts/timestamp/> \
+ *     --texts <texts.json>          # array of strings, one per slide
  */
 
 let createCanvas, loadImage;
-try {
-  ({ createCanvas, loadImage } = require('canvas'));
-} catch (e) {
-  console.error('node-canvas not installed. Run: npm install canvas');
-  console.error('macOS prereqs: brew install pkg-config cairo pango libpng jpeg giflib librsvg');
+try { ({ createCanvas, loadImage } = require('canvas')); }
+catch (e) {
+  console.error('✗ node-canvas not installed. This is required — refusing to silently skip overlays.');
+  console.error('  Install: npm install canvas');
+  console.error('  Linux deps: apt-get install libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev');
   process.exit(1);
 }
+
 const fs = require('fs');
 const path = require('path');
+const { readState, writeState } = require('./state-helpers');
 
 const args = process.argv.slice(2);
-const getArg = (name) => {
-  const i = args.indexOf(`--${name}`);
-  return i !== -1 ? args[i + 1] : null;
-};
-
+const getArg = (name) => { const i = args.indexOf(`--${name}`); return i !== -1 ? args[i + 1] : null; };
 const inputDir = getArg('input');
 const textsPath = getArg('texts');
 if (!inputDir || !textsPath) {
@@ -103,37 +93,50 @@ async function overlay(imgPath, text, outPath) {
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText(lines[i], x, y);
   }
-
   fs.writeFileSync(outPath, canvas.toBuffer('image/png'));
-  console.log(`  ✅ ${path.basename(outPath)} (${lines.length} line${lines.length > 1 ? 's' : ''})`);
-}
-
-function findRaw(dir, num) {
-  const candidates = [`slide-${num}-raw.png`, `slide${num}_raw.png`, `slide_${num}.png`];
-  for (const c of candidates) {
-    const p = path.join(dir, c);
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
 }
 
 (async () => {
+  const state = readState(inputDir);
+  if (!state) {
+    console.error(`✗ No state.json in ${inputDir}. Run generate-slides.js first.`);
+    process.exit(1);
+  }
+
   console.log(`Adding overlays for ${texts.length} slide(s) in ${inputDir}\n`);
-  let ok = 0;
-  let fail = 0;
+  let ok = 0, fail = 0;
   for (let i = 0; i < texts.length; i++) {
     const num = i + 1;
-    const raw = findRaw(inputDir, num);
-    if (!raw) { console.error(`  ❌ slide ${num}: no raw file found`); fail++; continue; }
+    const slot = state.slides[i];
+    if (!slot || !slot.generated) {
+      console.error(`  ❌ slide ${num}: not generated yet (state.json)`);
+      fail++; continue;
+    }
+    const raw = path.join(inputDir, slot.raw || `slide-${num}-raw.png`);
+    if (!fs.existsSync(raw)) {
+      console.error(`  ❌ slide ${num}: raw file missing at ${raw}`);
+      fail++; continue;
+    }
     const out = path.join(inputDir, `slide-${num}.png`);
     try {
       await overlay(raw, texts[i], out);
+      slot.final = `slide-${num}.png`;
+      slot.overlaid = true;
+      delete slot.lastError;
+      console.log(`  ✅ slide-${num}.png`);
       ok++;
     } catch (e) {
       console.error(`  ❌ slide ${num}: ${e.message}`);
+      slot.overlaid = false;
+      slot.lastError = e.message;
       fail++;
     }
   }
+
+  state.status = fail === 0 ? 'overlaid' : 'overlaid-partial';
+  state.overlaidAt = new Date().toISOString();
+  writeState(inputDir, state);
+
   console.log(`\n${ok}/${texts.length} overlays complete.`);
   if (fail > 0) process.exit(1);
 })();

@@ -7,10 +7,10 @@ The restaurant's best content comes from specifics only the owner knows. Fill th
 Silently scan at the start of each session:
 
 ```
-read_file: ~/social-marketing/knowledge-base/chef.json
-read_file: ~/social-marketing/knowledge-base/recipes.json
-read_file: ~/social-marketing/knowledge-base/history.json
-read_file: ~/social-marketing/photo-inventory.json
+read_file: $HOST_AGENT_HOME/social-marketing/knowledge-base/chef.json
+read_file: $HOST_AGENT_HOME/social-marketing/knowledge-base/recipes.json
+read_file: $HOST_AGENT_HOME/social-marketing/knowledge-base/history.json
+read_file: $HOST_AGENT_HOME/social-marketing/photo-inventory.json
 ```
 
 If any file is missing or thin, queue a probe. Prioritize by what unlocks the highest-engagement content first.

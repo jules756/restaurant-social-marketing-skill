@@ -5,19 +5,19 @@ description: Social media marketing partner for restaurants. Handles daily conte
 
 # Restaurant Marketing (Orchestrator)
 
-Marketing partner for a restaurant owner on Telegram. Your persona and banned-word rules are authoritative in [SOUL.md](../../templates/SOUL.md) (installed at `~/.hermes/SOUL.md`) — read it first. This skill owns the owner-facing *flow* (what to say and when), not the tone (SOUL.md owns tone).
+Marketing partner for a restaurant owner on Telegram. Your persona and banned-word rules are authoritative in `SOUL.md` at the Hermes home root (`/opt/data/SOUL.md` inside the container) — read it first. This skill owns the owner-facing *flow* (what to say and when), not the tone (SOUL.md owns tone).
 
 Your job: **more bookings**. Not more views.
 
 ## First Contact Rules
 
-- First message in any new conversation: check `~/social-marketing/restaurant-profile.json` with `read_file`. If `name` is filled, greet using it. If the file doesn't exist or `name` is empty, use generic phrasing and start Phase 1 onboarding with Question 1.
+- First message in any new conversation: check `$HOST_AGENT_HOME/social-marketing/restaurant-profile.json` with `read_file`. If `name` is filled, greet using it. If the file doesn't exist or `name` is empty, use generic phrasing and start Phase 1 onboarding with Question 1.
 - **Never invent a restaurant name.** The name comes from Q2 of onboarding. Placeholders like `[Restaurant]` in skill text are not literal names.
 - First reply on a new session: *"Hi! Let's set up your marketing. Which language should we talk in?"* — generic, no restaurant name.
 
 ## Phase 1 — Owner Onboarding (7 Questions, Telegram)
 
-One question at a time. Conversational. Save each answer to `~/social-marketing/restaurant-profile.json` as it arrives (don't wait until the end). Schema and full question flow: [references/onboarding.md](references/onboarding.md).
+One question at a time. Conversational. Save each answer to `$HOST_AGENT_HOME/social-marketing/restaurant-profile.json` as it arrives (don't wait until the end). Schema and full question flow: [references/onboarding.md](references/onboarding.md).
 
 Summary: language → name+cuisine → signature dishes (with visual detail) → vibe → typical guest → booking method+URL → Drive photos (silent check first).
 
@@ -31,18 +31,18 @@ The owner sees: one short ack if it will take >20 sec (*"On it — about 1 minut
 
 Execution:
 
-1. `read_file`: `~/social-marketing/restaurant-profile.json`. Pick the dish (default: first signature dish, or one the owner mentioned).
+1. `read_file`: `$HOST_AGENT_HOME/social-marketing/restaurant-profile.json`. Pick the dish (default: first signature dish, or one the owner mentioned).
 2. `memory`: pull recent hook performance for this restaurant.
-3. Delegate actual image generation to [content-preparation](../content-preparation/SKILL.md) — it owns the img2img vs txt2img decision, prompt construction (using [food-photography-hermes](../../adapted-skills/food-photography-hermes/SKILL.md) vocabulary), and hook/caption writing (using [social-media-seo-hermes](../../adapted-skills/social-media-seo-hermes/SKILL.md) library). Captions and hooks come from LLM reasoning, not hardcoded.
+3. Delegate actual image generation to [content-preparation](../content-preparation/SKILL.md) — it owns the img2img vs txt2img decision, prompt construction (using [food-photography-hermes](../food-photography-hermes/SKILL.md) vocabulary), and hook/caption writing (using [social-media-seo-hermes](../social-media-seo-hermes/SKILL.md) library). Captions and hooks come from LLM reasoning, not hardcoded.
 4. content-preparation returns a directory with `slide-1.png` … `slide-6.png` + `caption.txt`.
-5. Attach all slides to Telegram via `terminal` using the Bot API's `sendMediaGroup` endpoint with `config.telegram.{botToken,chatId}` — this is the only supported attachment path. Never describe images in text instead of attaching.
+5. Attach all slides to Telegram by calling Hermes's native Telegram-send tool (or the Composio Telegram tool — Hermes owns the bot connection, the skill never touches `config.telegram` because that block doesn't exist). Send images as file attachments, not as text descriptions.
 6. Send the caption as a follow-up text message (same Bot API).
 7. Ask: *"Ready to post?"*
 8. On yes, for each enabled platform in `config.platforms`, invoke `terminal`:
    ```bash
-   node ~/restaurant-social-marketing-skill/scripts/post-to-<platform>.js \
-     --config ~/social-marketing/config.json \
-     --dir ~/social-marketing/posts/<timestamp>
+   node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/post-to-<platform>.js \
+     --config $HOST_AGENT_HOME/social-marketing/config.json \
+     --dir $HOST_AGENT_HOME/social-marketing/posts/<timestamp>
    ```
    Each script prints a JSON line: `{"ok": true, "platform": "...", "mediaId": "...", "permalink": "..."}` on success, `{"ok": false, "error": "..."}` on failure. Parse the last line of stdout. Report results honestly to the owner — *"Posted to Instagram"* + permalink, or *"Instagram failed: [short reason]. Saved for retry."* Do not pretend success.
 9. `memory` append a record: `{ hookCategory, hookText, dish, platform, approach, timestamp, mediaId, permalink }`. This feeds future selection.
@@ -85,7 +85,7 @@ Three modes: same-day (post immediately, no approval, speed > polish), planned (
 
 ## Knowledge-Gap Probing
 
-One question per day max. Naturally timed. Never during stress. Triggers: missing chef story, missing recipe origins, missing sourcing info, missing dish photos in Drive inventory. Save answers to `~/social-marketing/knowledge-base/*.json`. Full trigger list: [references/knowledge-gaps.md](references/knowledge-gaps.md).
+One question per day max. Naturally timed. Never during stress. Triggers: missing chef story, missing recipe origins, missing sourcing info, missing dish photos in Drive inventory. Save answers to `$HOST_AGENT_HOME/social-marketing/knowledge-base/*.json`. Full trigger list: [references/knowledge-gaps.md](references/knowledge-gaps.md).
 
 ## Calendar Intelligence
 
@@ -93,7 +93,7 @@ Awareness of booking-driving dates. Checked every Monday during weekly research.
 
 ## Cold Start
 
-First-ever `generate post` — no Drive photos, no competitor data, no trend report. Acknowledge honestly: *"First post! I don't have your photos yet so I'll generate images from your description — once you add photos to the shared folder, the quality jumps."* Pick the first signature dish. Default to story-behind-dish or reaction hook (highest reliable engagement in [social-media-seo-hermes](../../adapted-skills/social-media-seo-hermes/SKILL.md)). After the first post ships, nudge for Drive photos and ask once about style: *"How did those images feel? Style right?"* Save any adjustments to `restaurant-profile.json.imageStyleNotes`. **Cold start never blocks posting.** A real post today > a polished post in three days.
+First-ever `generate post` — no Drive photos, no competitor data, no trend report. Acknowledge honestly: *"First post! I don't have your photos yet so I'll generate images from your description — once you add photos to the shared folder, the quality jumps."* Pick the first signature dish. Default to story-behind-dish or reaction hook (highest reliable engagement in [social-media-seo-hermes](../social-media-seo-hermes/SKILL.md)). After the first post ships, nudge for Drive photos and ask once about style: *"How did those images feel? Style right?"* Save any adjustments to `restaurant-profile.json.imageStyleNotes`. **Cold start never blocks posting.** A real post today > a polished post in three days.
 
 ## Error Handling
 
@@ -102,7 +102,7 @@ Drive sync fail → fall back to cached photos → fall back to text-only image 
 ## File Layout (Platform-Agnostic)
 
 ```
-~/social-marketing/
+$HOST_AGENT_HOME/social-marketing/
 ├── restaurant-profile.json     ← owner-provided via this skill
 ├── knowledge-base/              ← chef, history, recipes, menu
 ├── photos/                      ← Drive cache (reference material, NOT post output)
