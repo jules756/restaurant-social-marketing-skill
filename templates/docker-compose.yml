@@ -20,8 +20,8 @@ services:
       - HOST_DATA_DIR:/opt/data
     environment:
       - TZ=Europe/Stockholm
-    # `gateway run` starts the Telegram gateway daemon (long-lived
-    # listener). Hermes's entrypoint forwards args, so our pre-start
-    # script forwards the same — see scripts/docker-entrypoint.sh.
-    command: ["gateway", "run"]
+    # `hermes gateway` is the long-lived messaging-gateway daemon
+    # (Telegram + others, per the upstream docs). The Hermes entrypoint
+    # forwards args; our pre-start script does the same.
+    command: ["gateway"]
     # No published ports: agent is outbound-only (Telegram + Composio MCP).
