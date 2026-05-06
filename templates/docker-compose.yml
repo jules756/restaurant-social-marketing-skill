@@ -1,0 +1,18 @@
+# Sample docker-compose.yml for one Hermes marketing agent.
+# One file per agent on the VM. Volume names should encode company + agent
+# so multiple agents on the same VM don't collide.
+#
+# Usage:
+#   cp templates/docker-compose.yml /opt/agents/<company>-marketing/docker-compose.yml
+#   # edit container_name + the volume host path below
+#   docker compose up -d
+services:
+  marketing-agent:
+    image: restaurant-marketing:v4-alpha
+    container_name: marketing-agent-CHANGE-ME
+    restart: unless-stopped
+    volumes:
+      - /var/lib/akira/CHANGE-ME/marketing:/data
+    environment:
+      - TZ=Europe/Stockholm
+    # No published ports: agent is outbound-only (Telegram + Composio MCP).

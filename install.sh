@@ -1,130 +1,74 @@
 #!/bin/bash
-# One-command Installer setup for a new restaurant client.
+# v4 host-side install. Builds the per-agent image and starts a container.
+# In-container bootstrap (scaffolding /data, running setup.js, starting
+# Hermes) lives in scripts/docker-entrypoint.sh.
 #
 # Usage:
-#   ./install.sh
+#   COMPANY=<short-id> [AGENT_NAME=marketing] bash install.sh
 #
-# What it does:
-#   1. Copies custom skills + adapted skills into ~/.hermes/skills/social-media/.
-#   2. Ensures @composio/core SDK is installed in the repo (local).
-#   3. Creates social-marketing/ working directory with the config template
-#      (default: $HOME/social-marketing). Prompts to wipe any prior client
-#      profile data.
-#   4. Runs the Phase 0 validator (scripts/setup.js).
-#
-# Do NOT hand the bot to the restaurant owner until setup.js reports all ✅.
-#
-# This script does NOT prompt for API keys. All external calls go through
-# Composio SDK. Two values go into social-marketing/config.json:
-# composio.apiKey (org-scoped) + composio.userId. See INSTALLER.md.
+# Env vars:
+#   COMPANY      Required. Short company identifier (e.g. "rodolfino").
+#   AGENT_NAME   Defaults to "marketing". Distinguishes per-company agents.
+#   REPO_DIR     Where to clone the repo (default $HOME/restaurant-social-marketing-skill).
+#   DATA_DIR     Host volume root (default /var/lib/akira/$COMPANY/$AGENT_NAME).
+#   COMPOSE_DIR  Where to write the per-agent compose file
+#                (default /opt/agents/$COMPANY-$AGENT_NAME).
+#   IMAGE_TAG    Image tag to build (default restaurant-marketing:v4-alpha).
 
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HERMES_DIR="${HERMES_HOME:-$HOME/.hermes}"
-# Hermes organizes skills by category. Restaurant marketing lives under
-# social-media/. Override via SKILLS_CATEGORY=<other> if your Hermes uses a
-# different layout, or set it to "" to install at the top level.
-SKILLS_CATEGORY="${SKILLS_CATEGORY:-social-media}"
-SKILLS_DIR="$HERMES_DIR/skills${SKILLS_CATEGORY:+/$SKILLS_CATEGORY}"
-# Client working dir — default to an absolute path under $HOME so running
-# install.sh from inside the repo doesn't create it inside the repo tree.
-CLIENT_DIR="${CLIENT_DIR:-$HOME/social-marketing}"
-if [[ "$CLIENT_DIR" != /* ]]; then
-  CLIENT_DIR="$HOME/$CLIENT_DIR"
-fi
+REPO_DIR="${REPO_DIR:-$HOME/restaurant-social-marketing-skill}"
+AGENT_NAME="${AGENT_NAME:-marketing}"
+COMPANY="${COMPANY:?Set COMPANY=<short-id> (e.g. COMPANY=rodolfino)}"
+DATA_DIR="${DATA_DIR:-/var/lib/akira/$COMPANY/$AGENT_NAME}"
+COMPOSE_DIR="${COMPOSE_DIR:-/opt/agents/$COMPANY-$AGENT_NAME}"
+IMAGE_TAG="${IMAGE_TAG:-restaurant-marketing:v4-alpha}"
 
-echo "=== Restaurant Social Marketing Installer ==="
-echo "Repo:    $REPO_DIR"
-echo "Hermes:  $HERMES_DIR"
-echo "Skills:  $SKILLS_DIR"
-echo "Client:  $CLIENT_DIR"
+echo "=== v4 host-side install ==="
+echo "Repo:       $REPO_DIR"
+echo "Image tag:  $IMAGE_TAG"
+echo "Data dir:   $DATA_DIR"
+echo "Compose:    $COMPOSE_DIR"
 echo
 
-# 1. Copy skills
-mkdir -p "$SKILLS_DIR"
-echo "Copying skills to $SKILLS_DIR …"
-cp -r "$REPO_DIR/skills/"* "$SKILLS_DIR/"
-cp -r "$REPO_DIR/adapted-skills/"* "$SKILLS_DIR/"
-echo "  ✅ skills copied"
-
-# 1b. Install SOUL.md — Hermes's global persona file. Overrides the default
-# general-assistant behavior so every message routes through the restaurant-
-# marketing skill instead of producing meta-commentary.
-mkdir -p "$HERMES_DIR"
-if [[ -f "$HERMES_DIR/SOUL.md" ]]; then
-  if ! diff -q "$REPO_DIR/templates/SOUL.md" "$HERMES_DIR/SOUL.md" > /dev/null 2>&1; then
-    echo "  ℹ  Existing $HERMES_DIR/SOUL.md differs from template — backing up to SOUL.md.bak"
-    cp "$HERMES_DIR/SOUL.md" "$HERMES_DIR/SOUL.md.bak"
-  fi
+if [ ! -d "$REPO_DIR" ]; then
+  echo "Cloning repo into $REPO_DIR …"
+  git clone https://github.com/Akira-Agent-Agency/restaurant-social-marketing-skill.git "$REPO_DIR"
 fi
-cp "$REPO_DIR/templates/SOUL.md" "$HERMES_DIR/SOUL.md"
-echo "  ✅ SOUL.md installed → $HERMES_DIR/SOUL.md"
+cd "$REPO_DIR"
 
-# 2. Ensure @composio/core is installed in the repo (local install, no sudo).
-#    Avoids /usr/local permission headaches from npm -g on macOS.
-if [[ ! -d "$REPO_DIR/node_modules/@composio/core" ]]; then
-  echo "Installing repo dependencies (@composio/core) …"
-  if ! (cd "$REPO_DIR" && npm install --silent); then
-    echo "  ❌ npm install failed in $REPO_DIR. Install Node.js v18+ and re-run." >&2
-    exit 1
-  fi
-fi
-echo "  ✅ @composio/core installed at $REPO_DIR/node_modules/@composio/core"
+echo "Building image $IMAGE_TAG (first run is slow — node-canvas deps) …"
+docker build -t "$IMAGE_TAG" .
 
-# 3. Client working dir
-FRESH_CONFIG=0
-if [[ -d "$CLIENT_DIR" ]]; then
-  echo "  ℹ  $CLIENT_DIR already exists."
-  # Prior-client-data hygiene: a restaurant-profile.json from a previous client
-  # must never leak into a new install. Prompt before wiping.
-  if [[ -f "$CLIENT_DIR/restaurant-profile.json" ]]; then
-    echo
-    read -r -p "  Prior restaurant-profile.json found. This is a new client install — wipe client data (profile + knowledge-base)? [y/N] " wipe
-    if [[ "$wipe" == "y" || "$wipe" == "Y" ]]; then
-      rm -f "$CLIENT_DIR/restaurant-profile.json"
-      rm -rf "$CLIENT_DIR/knowledge-base"
-      mkdir -p "$CLIENT_DIR/knowledge-base"
-      echo "  ✅ Prior client data wiped."
-    else
-      echo "  ℹ  Keeping prior client data. (If you're installing for a new restaurant, re-run and choose y.)"
-    fi
-  fi
-else
-  echo "Creating $CLIENT_DIR …"
-  mkdir -p "$CLIENT_DIR"/{photos/{dishes,ambiance,kitchen,exterior,unsorted},posts,reports/trend-reports,reports/competitor,knowledge-base}
-  cp "$REPO_DIR/templates/config.template.json" "$CLIENT_DIR/config.json"
-  echo "  ✅ $CLIENT_DIR/ created"
-  echo "  ✅ $CLIENT_DIR/config.json copied from template"
-  FRESH_CONFIG=1
-fi
+mkdir -p "$COMPOSE_DIR" "$DATA_DIR"
 
-# 4. Validator
-echo
-if [[ "$FRESH_CONFIG" == "1" ]]; then
-  cat <<EOF
-Next step — fill in $CLIENT_DIR/config.json with two Composio values +
-Telegram info from Jules's dashboard:
-  • telegram.{botToken, chatId}                — from @BotFather / getUpdates
-  • composio.apiKey                            — org-scoped key (one org per restaurant)
-  • composio.userId                            — per-restaurant entity identifier
-  • platforms.{instagram|tiktok|facebook}.enabled — per-platform booleans
-  • googleDrive.enabled                         — true if using Drive photos
+# Materialize the per-agent compose file from the template, substituting
+# placeholders for this company + agent.
+sed \
+  -e "s|CHANGE-ME|$COMPANY-$AGENT_NAME|g" \
+  -e "s|/var/lib/akira/CHANGE-ME/marketing|$DATA_DIR|g" \
+  -e "s|restaurant-marketing:v4-alpha|$IMAGE_TAG|g" \
+  "$REPO_DIR/templates/docker-compose.yml" > "$COMPOSE_DIR/docker-compose.yml"
 
-Then re-run this script to validate:
-  ./install.sh
+cd "$COMPOSE_DIR"
+docker compose up -d
+
+cat <<EOF
+
+Container started: $COMPANY-$AGENT_NAME
+
+First-boot config template was scaffolded inside the container at
+  $DATA_DIR/social-marketing/config.json
+
+Next steps:
+  1. Edit $DATA_DIR/social-marketing/config.json
+     - telegram.botToken + chatId
+     - composio.apiKey (project-scoped) + userId (e.g. "$COMPANY-$AGENT_NAME")
+     - flip the platforms you use to enabled: true
+  2. In the Composio dashboard, connect OAuth for each enabled platform
+     and add the OpenAI credential for image generation.
+  3. Restart the container so docker-entrypoint.sh runs setup.js:
+       docker compose -f $COMPOSE_DIR/docker-compose.yml restart
+  4. Tail logs until setup.js reports green:
+       docker logs -f marketing-agent-$COMPANY-$AGENT_NAME
 EOF
-  exit 0
-fi
-
-echo "Running Phase 0 validator …"
-echo
-if ! node "$REPO_DIR/scripts/setup.js" --config "$CLIENT_DIR/config.json"; then
-  echo
-  echo "❌ Phase 0 checks failed. Fix the flagged items in $CLIENT_DIR/config.json and re-run this script."
-  exit 1
-fi
-
-echo
-echo "✅ Installer complete. Start Hermes to hand the bot to the restaurant owner:"
-echo "   hermes"
