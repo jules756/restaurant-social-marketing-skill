@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
- * Generate slideshow images via OpenRouter chat completions with image modality.
+ * Generate slideshow images via gpt-image-2 routed through Composio MCP.
  *
- * Works with Gemini image models (e.g. google/gemini-2.5-flash-image-preview) and
- * any other OpenRouter image model that supports the chat-completions-with-image
- * output modality. For txt2img, send a text-only user message. For img2img, attach
- * the reference photo as an image_url part in the same user message.
+ * v4: the OpenAI API key lives in the Composio project, not the VM. The
+ * MCP server advertises an OpenAI image-generation tool; we discover its
+ * slug at runtime (config.imageGen.toolSlug overrides discovery if set).
  *
- * Model is set in config.imageGen.model.
+ * txt2img: send a text-only prompt.
+ * img2img: pass the reference photo's absolute path; Composio MCP handles
+ *          server-side hosting and feeds OpenAI an edit/variation call.
  *
  * Usage:
  *   node generate-slides.js \
@@ -29,7 +30,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { executeTool, loadConfig } = require('./composio-helpers');
+const { callTool, loadConfig, findToolByPattern, listTools } = require('./mcp-client');
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -52,19 +53,18 @@ if (!configPath || !outputDir || !promptsPath) {
 
 const config = loadConfig(configPath);
 const prompts = JSON.parse(fs.readFileSync(promptsPath, 'utf-8'));
-const model = config.imageGen?.model;
+const model = 'gpt-image-2';
 
-if (!model) {
-  console.error('No image model configured. Set config.imageGen.model in config.json.');
-  process.exit(1);
-}
-
-// Chat-completions image models don't accept size/quality as parameters the way
-// OpenAI's images/generations endpoint does. We hint at aspect ratio + quality
-// inside the prompt text instead.
+// gpt-image-2 supported sizes (per OpenAI API). The tool's input schema
+// may further constrain; we intersect at runtime via listTools.
+const PLATFORM_SIZE = {
+  tiktok:    '1024x1536',  // 2:3 portrait — closest to TikTok 9:16; overlay handles final crop
+  instagram: '1024x1280',  // ~4:5 portrait — IG carousel native
+  facebook:  '1536x1024'   // 3:2 landscape — closest to FB 16:9
+};
 const PLATFORM_HINTS = {
-  tiktok:    { aspect: '9:16 portrait', slides: 6 },
-  instagram: { aspect: '4:5 portrait',  slides: 6 },
+  tiktok:    { aspect: '9:16 portrait',  slides: 6 },
+  instagram: { aspect: '4:5 portrait',   slides: 6 },
   facebook:  { aspect: '16:9 landscape', slides: 1 }
 };
 const hints = PLATFORM_HINTS[platform];
@@ -127,93 +127,75 @@ function buildPrompt(basePrompt, slidePrompt) {
   ].join('\n');
 }
 
-// Extract the first base64-encoded image from a chat-completions response.
-// OpenRouter's image-modality response format varies by provider, so we probe
-// every shape we've seen and return the first match.
-function extractImageB64(data) {
-  const message = data.choices?.[0]?.message;
-  if (!message) return null;
-
-  // Shape A: message.images is an array of { type, image_url: { url: "data:image/...;base64,..." } }
-  if (Array.isArray(message.images)) {
-    for (const img of message.images) {
-      const url = img?.image_url?.url || img?.url;
-      if (typeof url === 'string' && url.startsWith('data:image/')) {
-        return url.split(',')[1];
-      }
-    }
+// Resolve the OpenAI image-generation tool slug from the MCP server.
+// Config can pin one explicitly via config.imageGen.toolSlug; otherwise
+// we discover it by name pattern. Cache the resolution across calls.
+let _resolvedToolSlug = null;
+async function resolveImageTool() {
+  if (_resolvedToolSlug) return _resolvedToolSlug;
+  if (config.imageGen?.toolSlug) {
+    _resolvedToolSlug = config.imageGen.toolSlug;
+    return _resolvedToolSlug;
   }
-
-  // Shape B: message.content is an array containing an image part
-  if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      const url = part?.image_url?.url || part?.image_url || part?.image;
-      if (typeof url === 'string' && url.startsWith('data:image/')) {
-        return url.split(',')[1];
-      }
-    }
+  const tool = await findToolByPattern(config, /^OPENAI_.*IMAGE.*GENERAT/i);
+  if (!tool) {
+    const tools = await listTools(config);
+    const names = tools.map((t) => t.name).slice(0, 20).join(', ');
+    throw new Error(
+      `No OpenAI image-generation tool advertised by the MCP server. ` +
+      `Confirm the OpenAI credential is attached to your Composio project, ` +
+      `or pin the slug in config.imageGen.toolSlug. ` +
+      `First tools advertised: ${names}`
+    );
   }
+  _resolvedToolSlug = tool.name;
+  return _resolvedToolSlug;
+}
 
-  // Shape C: message.content is a string containing a data URL
-  if (typeof message.content === 'string') {
-    const match = message.content.match(/data:image\/[a-z]+;base64,([A-Za-z0-9+/=]+)/);
-    if (match) return match[1];
+// gpt-image-2 returns base64 JSON via Composio's standard image-generation
+// tool. Response shape varies slightly between toolkit versions — probe a
+// few common paths.
+function extractImageB64(result) {
+  const candidates = [
+    result?.data?.[0]?.b64_json,
+    result?.data?.b64_json,
+    result?.images?.[0]?.b64_json,
+    result?.images?.[0]?.b64,
+    result?.b64_json,
+    result?.image_b64
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.length > 0) return c;
   }
-
   return null;
 }
 
 async function generateImage(promptText, referenceImagePath, outPath) {
-  const userContent = [{ type: 'text', text: promptText }];
-
+  const toolSlug = await resolveImageTool();
+  const args = {
+    prompt: promptText,
+    model,
+    n: 1,
+    size: PLATFORM_SIZE[platform],
+    response_format: 'b64_json'
+  };
   if (referenceImagePath) {
-    const buf = fs.readFileSync(referenceImagePath);
-    const mime = /\.png$/i.test(referenceImagePath) ? 'image/png' : 'image/jpeg';
-    userContent.push({
-      type: 'image_url',
-      image_url: { url: `data:${mime};base64,${buf.toString('base64')}` }
-    });
+    // Pass the absolute path; Composio MCP hosts the file server-side and
+    // routes to OpenAI's image-edit endpoint. Field name matches the
+    // pattern used by other Composio image tools (Instagram, Facebook).
+    args.image_file = path.resolve(referenceImagePath);
   }
 
-  // Prefer direct OpenRouter. Key can come from either the env or
-  // config.imageGen.openrouterApiKey (config wins — more reliable than
-  // env when scripts are invoked from sub-shells or Hermes terminal tools).
-  // Fall back to Composio proxy if neither is set.
-  const directKey = config.imageGen?.openrouterApiKey || process.env.OPENROUTER_API_KEY;
-  let data;
-  if (directKey) {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${directKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://akira-agent.com',
-        'X-Title': 'restaurant-social-marketing'
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: userContent }],
-        modalities: ['image', 'text']
-      })
-    });
-    data = await res.json();
-    if (!res.ok && !data.error) data.error = { message: `HTTP ${res.status}` };
-  } else {
-    const result = await executeTool(config, 'OPENROUTER_CHAT_COMPLETIONS', {
-      model,
-      messages: [{ role: 'user', content: userContent }],
-      modalities: ['image', 'text']
-    });
-    data = result.data || result.body || result;
-  }
-  if (data.error) {
-    throw new Error(data.error?.message || `chat.completions: ${JSON.stringify(data).slice(0, 300)}`);
+  const result = await callTool(config, toolSlug, args);
+  if (result?.error) {
+    throw new Error(result.error?.message || JSON.stringify(result.error).slice(0, 300));
   }
 
-  const b64 = extractImageB64(data);
+  const b64 = extractImageB64(result);
   if (!b64) {
     throw new Error(
-      `No image in response. Model may not support image output modality. Response shape: ${JSON.stringify(data.choices?.[0]?.message || data).slice(0, 400)}`
+      `No image in response. Tool ${toolSlug} returned an unexpected shape. ` +
+      `First 400 chars: ${JSON.stringify(result).slice(0, 400)}`
     );
   }
 
@@ -249,7 +231,7 @@ async function withRetry(fn, retries = 2) {
     : 'restaurant';
 
   console.log(`\nGenerating ${prompts.slides.length} slides for ${restaurantName}`);
-  console.log(`  platform: ${platform}  aspect: ${hints.aspect}  urgency: ${urgency}  approach: ${approach}  model: ${model}`);
+  console.log(`  platform: ${platform}  aspect: ${hints.aspect}  size: ${PLATFORM_SIZE[platform]}  urgency: ${urgency}  approach: ${approach}  model: ${model}`);
   if (refPhoto) console.log(`  reference: ${refPhoto}\n`);
 
   let success = 0;
