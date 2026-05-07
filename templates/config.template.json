@@ -1,7 +1,6 @@
 {
-  "_comment": "Skill-install template. Restaurant info comes from the owner via Telegram onboarding → restaurant-profile.json. Every external call goes through the per-agent Composio MCP server. {{AGENT_HOME}} is replaced by install.sh with the agent's data dir (~/agents/<agent>/social-marketing). Telegram is configured inside Hermes itself via 'hermes setup' — not here.",
+  "_comment": "Skill-install template. Owner only fills composio.apiKey + composio.defaultUserId. Everything else (which platforms, which toolkits, which userIds) is discovered at setup time by querying Composio for connected accounts under defaultUserId. Restaurant info comes from the owner via Telegram onboarding → restaurant-profile.json. {{AGENT_HOME}} is replaced by install.sh with the agent's data dir.",
   "composio": {
-    "_comment": "apiKey: your Composio project API key. defaultUserId: per-agent identifier used for most toolkits (e.g. 'rodolfino-marketing'). userIdOverrides: only fill in if a specific toolkit needs a different userId — Composio sometimes forces splits (e.g. OpenAI on its own userId, or OpenRouter separate from OAuth toolkits). Add overrides as you discover them. Toolkit slugs match Composio's: 'openai', 'openrouter', 'gmail', 'googledrive', 'instagram', 'facebook', 'tiktok'. mcpServerUrls is filled in by setup.js — leave blank.",
     "apiKey": "",
     "defaultUserId": "",
     "userIdOverrides": {},
@@ -9,13 +8,15 @@
     "mcpServerIds": {}
   },
   "platforms": {
+    "_comment": "Auto-discovered by setup.js based on which toolkits are connected under defaultUserId in Composio. Hand-edit only if you want to force-disable a connected platform.",
     "instagram": { "enabled": false },
     "tiktok":    { "enabled": false },
     "facebook":  { "enabled": false }
   },
   "googleDrive": {
+    "_comment": "enabled is auto-set by setup.js if googledrive is connected in Composio. folderName defaults to the restaurant name once onboarding completes.",
     "enabled": false,
-    "folderName": "akira-agent_src",
+    "folderName": "",
     "localCachePath": "{{AGENT_HOME}}/social-marketing/photos/",
     "inventoryPath": "{{AGENT_HOME}}/social-marketing/photo-inventory.json"
   },

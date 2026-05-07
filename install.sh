@@ -328,32 +328,19 @@ cat <<EOF
 
 ✅ Skill installed for agent '$AGENT'.
 
-Next steps:
-  1. Edit $CONFIG and fill in:
-     - composio.apiKey         (your Composio project API key)
-     - composio.defaultUserId  (e.g. "$AGENT-marketing")
-     - composio.userIdOverrides (only if Composio splits a toolkit onto its
-       own userId, e.g. "openai": "$AGENT-openai")
-     - platforms.{instagram,facebook,tiktok}.enabled
-     - platforms.facebook.pageId  (numeric Facebook Page ID, if FB enabled)
-     - platforms.tiktok.verifiedDomain  (HTTPS, if TikTok enabled)
-     - googleDrive.enabled + folderName  (if syncing photos from Drive)
+Two fields in $CONFIG must be set:
+  - composio.apiKey         (your Composio project API key)
+  - composio.defaultUserId  (the userId that owns your connections in Composio)
 
-  2. In the Composio dashboard, connect the OAuth toolkits for each userId
-     (e.g. for defaultUserId connect Instagram/Facebook/Drive/Telegram;
-     if you have an "openai" override, connect OpenAI under that userId).
+Everything else (which platforms, Drive, etc.) is auto-discovered from
+Composio at setup time.
 
-  3. Restart this agent's Hermes container so it picks up SOUL.md + skills:
-       docker restart hermes-$AGENT
+Then:
+  docker restart hermes-$AGENT      # picks up SOUL.md + skills
+  docker logs -f hermes-$AGENT      # watch boot
 
-     The on-boot hook will auto-run setup.js to provision per-userId MCP
-     servers. Tail logs to verify:
-       docker logs -f hermes-$AGENT
+Message the agent on Telegram to test.
 
-  4. Message this agent's Telegram bot (token configured inside Hermes via
-     'docker exec -it hermes-$AGENT hermes setup'). Hermes will run Phase 1
-     onboarding (7 questions).
-
-To uninstall the cron jobs + on-boot hook (data kept):
+Uninstall (keeps data):
   AGENT=$AGENT bash $SKILL_DIR/install.sh --uninstall
 EOF

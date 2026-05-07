@@ -105,18 +105,32 @@ const TOOL_ALLOWLIST = {
   ],
 };
 
-function enabledToolkits(config) {
+/**
+ * Discover which toolkits are connected under defaultUserId on Composio.
+ * Side-effect: mutates config.platforms.*.enabled and config.googleDrive.enabled
+ * to match. The owner never edits these by hand — Composio is the source of truth.
+ */
+async function discoverEnabledToolkits(composio, config) {
+  const userId = config.composio.defaultUserId;
   const list = [];
-  for (const t of PLATFORM_TOOLKITS) {
-    if (config.platforms?.[t]?.enabled) list.push(t);
+  for (const tk of KNOWN_TOOLKITS) {
+    try {
+      const accounts = await composio.connectedAccounts.list({ userIds: [userId], toolkitSlugs: [tk] });
+      const items = Array.isArray(accounts?.items) ? accounts.items : [];
+      if (items.length) list.push(tk);
+    } catch {
+      /* ignore — toolkit not connected for this userId */
+    }
   }
-  if (config.googleDrive?.enabled) list.push('googledrive');
-  // OpenAI is always required (image generation).
-  list.push('openai');
-  // OpenRouter is required for weekly research; default-on (cron skips
-  // gracefully if the auth config is missing).
-  list.push('openrouter');
-  return [...new Set(list)];
+  // Reflect discovery back into config (so the owner's view of state is accurate).
+  config.platforms = config.platforms || {};
+  for (const t of PLATFORM_TOOLKITS) {
+    config.platforms[t] = config.platforms[t] || {};
+    config.platforms[t].enabled = list.includes(t);
+  }
+  config.googleDrive = config.googleDrive || {};
+  config.googleDrive.enabled = list.includes('googledrive');
+  return list;
 }
 
 /**
@@ -211,13 +225,14 @@ function serverNameFor(userId) {
     process.exit(1);
   }
 
-  // 3. Enabled toolkits
-  const enabled = enabledToolkits(config);
+  // 3. Discover enabled toolkits from Composio (auto-set platforms.*.enabled).
+  const enabled = await discoverEnabledToolkits(composio, config);
   if (!enabled.length) {
-    record('At least one platform enabled', false, 'Enable instagram/facebook/tiktok or googleDrive in config');
+    record('Toolkits connected under defaultUserId', false,
+      `No connected accounts found for "${defaultUserId}" in Composio. Connect at least one toolkit in the Composio dashboard, then re-run.`);
     process.exit(1);
   }
-  record(`Enabled toolkits: ${enabled.join(', ')}`, true);
+  record(`Discovered toolkits under "${defaultUserId}": ${enabled.join(', ')}`, true);
 
   // 4. For each unique userId, gather toolkits + auth configs.
   const userIds = uniqueUserIds(config);
