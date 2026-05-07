@@ -59,13 +59,22 @@ awk '
   !in_block { print }
 ' "$HERMES_CONFIG_YAML" > "$TMP"
 
-# Append our entry.
+# Append our entry. Tool Router URLs require auth — read the API key from
+# config.json so Hermes can authenticate. Without this header Hermes gets
+# a 401 on every connect and the server shows as "failed" at boot.
+API_KEY=$(jq -r '.composio.apiKey // ""' "$CONFIG_JSON")
+if [[ -z "$API_KEY" || "$API_KEY" == "null" ]]; then
+  echo "✗ no composio.apiKey in $CONFIG_JSON. Hermes won't be able to auth."
+  exit 1
+fi
 cat >> "$TMP" <<EOF
 
 mcp_servers:
   composio_restaurant:
     url: "$URL_CLEAN"
     transport: streamable_http
+    headers:
+      x-api-key: "$API_KEY"
 EOF
 
 # Atomic replace.
