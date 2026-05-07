@@ -113,7 +113,19 @@ for skill in "${SKILL_NAMES[@]}"; do
 done
 echo "  ✓ installed ${#SKILL_NAMES[@]} skill folders → $HERMES_HOME/skills/"
 
-# 5. On-boot hook. Runs inside the Hermes container; provisions MCP
+# 5. Copy scripts/ + package.json into the agent's data dir so the in-
+#    container on-boot hook can find them at $HOST_AGENT_HOME/scripts/
+#    (no extra Docker mount needed; piggybacks on the existing mount).
+#    Trade-off: skill updates require re-running install.sh, not just git pull.
+echo "→ Copying scripts/ into agent data dir"
+mkdir -p "$AGENT_HOME/scripts"
+rm -rf "$AGENT_HOME/scripts" "$AGENT_HOME/node_modules" "$AGENT_HOME/package.json" "$AGENT_HOME/package-lock.json"
+cp -r "$SKILL_DIR/scripts" "$AGENT_HOME/scripts"
+cp "$SKILL_DIR/package.json" "$AGENT_HOME/package.json"
+[[ -f "$SKILL_DIR/package-lock.json" ]] && cp "$SKILL_DIR/package-lock.json" "$AGENT_HOME/package-lock.json"
+echo "  ✓ scripts copied → $AGENT_HOME/scripts/"
+
+# 6. On-boot hook. Runs inside the Hermes container; provisions MCP
 #    servers when the per-userId map in config is still empty.
 HOOK_FILE="$HERMES_HOME/hooks/on-boot/restaurant-social-marketing-skill.sh"
 mkdir -p "$HERMES_HOME/hooks/on-boot"
@@ -124,19 +136,17 @@ cat > "$HOOK_FILE" <<'HOOK'
 set -euo pipefail
 AGENT_HOME="${HOST_AGENT_HOME:-/host-agent-home}"
 CONFIG="$AGENT_HOME/social-marketing/config.json"
-SKILL_REPO="$AGENT_HOME/restaurant-social-marketing-skill"
+SCRIPTS_DIR="$AGENT_HOME/scripts"
 
 [[ -f "$CONFIG" ]] || { echo "[restaurant-marketing] no $CONFIG yet — skipping"; exit 0; }
+[[ -d "$SCRIPTS_DIR" ]] || { echo "[restaurant-marketing] scripts not found at $SCRIPTS_DIR — re-run install.sh on host"; exit 0; }
 
 # If mcpServerUrls is empty (no userIds provisioned yet), run setup.
 URLS_COUNT="$(jq -r '.composio.mcpServerUrls | length' "$CONFIG" 2>/dev/null || echo 0)"
 if [[ "$URLS_COUNT" == "0" ]]; then
-  if [[ ! -d "$SKILL_REPO" ]]; then
-    echo "[restaurant-marketing] skill repo not found at $SKILL_REPO — host-side install incomplete"
-    exit 0
-  fi
   echo "[restaurant-marketing] provisioning Composio MCP servers"
-  node "$SKILL_REPO/scripts/setup.js" --config "$CONFIG" || \
+  cd "$AGENT_HOME"
+  node "$SCRIPTS_DIR/setup.js" --config "$CONFIG" || \
     echo "[restaurant-marketing] setup.js failed — fix config.json (composio.apiKey, defaultUserId, userIdOverrides) then restart"
 fi
 HOOK
@@ -150,23 +160,21 @@ if [[ ! -s "$HOOK_FILE" ]]; then
 fi
 echo "  ✓ installed on-boot hook ($HOOK_FILE, $(wc -l < "$HOOK_FILE") lines)"
 
-# 6. npm deps
+# 7. npm deps — install INSIDE $AGENT_HOME so the in-container scripts
+#    can resolve their require()s. node_modules ships with the agent home,
+#    not the skill repo.
 if command -v npm >/dev/null 2>&1; then
-  echo "→ Installing npm deps (this can take a minute)"
-  (cd "$SKILL_DIR" && npm install --silent --omit=dev)
-  echo "  ✓ deps installed"
+  echo "→ Installing npm deps in $AGENT_HOME (this can take a minute)"
+  (cd "$AGENT_HOME" && npm install --silent --omit=dev)
+  echo "  ✓ deps installed → $AGENT_HOME/node_modules/"
 else
   echo "  ⚠ npm not found — install Node.js 18+ first"
 fi
 
-# 7. Symlink the skill repo into ~/agents/<agent>/ so the in-container
-#    on-boot hook can find it via $HOST_AGENT_HOME/restaurant-social-marketing-skill.
-if [[ ! -e "$AGENT_HOME/restaurant-social-marketing-skill" ]]; then
-  ln -s "$SKILL_DIR" "$AGENT_HOME/restaurant-social-marketing-skill"
-  echo "  ✓ symlinked skill repo into $AGENT_HOME/"
-fi
+# 8. Drop any leftover symlink from the previous Option-A install layout.
+rm -f "$AGENT_HOME/restaurant-social-marketing-skill"
 
-# 8. Register cron jobs (substitute AGENT_HOME + SKILL_DIR placeholders).
+# 9. Register cron jobs (substitute AGENT_HOME placeholder).
 # IMPORTANT: clear ONLY the cron block, NOT the on-boot hook we just wrote
 # in step 5. Earlier this called uninstall_cron_and_hook which deleted the
 # hook it had just written 100 lines earlier. Took hours to find.
@@ -176,7 +184,7 @@ trap "rm -f $TMP_CRON" EXIT
 crontab -l 2>/dev/null > "$TMP_CRON" || true
 {
   echo "$CRON_TAG"
-  sed "s|{{AGENT_HOME}}|$AGENT_HOME|g; s|{{SKILL_DIR}}|$SKILL_DIR|g" "$SKILL_DIR/templates/crontab.template"
+  sed "s|{{AGENT_HOME}}|$AGENT_HOME|g" "$SKILL_DIR/templates/crontab.template"
   echo "$CRON_TAG END"
 } >> "$TMP_CRON"
 crontab "$TMP_CRON"

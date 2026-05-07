@@ -1,5 +1,5 @@
 # Restaurant Social Marketing — scheduled jobs (per-agent).
-# Installed by install.sh. {{AGENT_HOME}} and {{SKILL_DIR}} are replaced at install time.
+# Installed by install.sh. {{AGENT_HOME}} is replaced at install time.
 # All times are in the VM's local timezone (set via the OS).
 #
 # Each agent has its own crontab section, tagged with the agent name in
@@ -19,16 +19,16 @@
 # Respects config.posting.autoPost.{enabled, paused, lastPostedAt, consecutiveFailures}.
 # Use /pause and /resume in Telegram to control without touching config.
 # To change the time, edit the cron line below AND config.posting.schedule[0].
-0 11 * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/auto-post.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/auto-post.log 2>&1
+0 11 * * * cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/auto-post.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/auto-post.log 2>&1
 
 # Daily analytics — 08:00 every day. Writes a report file Hermes reads later.
-0 8 * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/daily-report.js --config {{AGENT_HOME}}/social-marketing/config.json --days 3 >> {{AGENT_HOME}}/social-marketing/logs/daily-report.log 2>&1
+0 8 * * * cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/daily-report.js --config {{AGENT_HOME}}/social-marketing/config.json --days 3 >> {{AGENT_HOME}}/social-marketing/logs/daily-report.log 2>&1
 
 # Weekly trend research — Monday 07:00. Writes trend-report.json + narrative MD.
-0 7 * * 1 cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/weekly-research.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/weekly-research.log 2>&1
+0 7 * * 1 cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/weekly-research.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/weekly-research.log 2>&1
 
 # Weekly competitor research — Monday 07:30. Writes competitor-research.json + narrative MD.
-30 7 * * 1 cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/competitor-research.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/competitor-research.log 2>&1
+30 7 * * 1 cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/competitor-research.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/competitor-research.log 2>&1
 
 # Daily aggregator — 23:30. Roll up the day's events.
-30 23 * * * cd {{AGENT_HOME}}/social-marketing && node {{SKILL_DIR}}/scripts/aggregator.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/aggregator.log 2>&1
+30 23 * * * cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/aggregator.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/aggregator.log 2>&1
