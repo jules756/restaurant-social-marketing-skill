@@ -15,12 +15,12 @@ Uses Hermes's native tools for research (`web_search`, `web_extract`, `browser_n
 
 **Execution:**
 
-1. `read_file` `$HOST_AGENT_HOME/social-marketing/config.json` for timezone, bookingTracking method, platforms enabled.
+1. `read_file` `/host-agent-home/social-marketing/config.json` for timezone, bookingTracking method, platforms enabled.
 2. Invoke `terminal`:
    ```bash
-   node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/daily-report.js --config $HOST_AGENT_HOME/social-marketing/config.json --days 3
+   node /host-agent-home/scripts/daily-report.js --config /host-agent-home/social-marketing/config.json --days 3
    ```
-   The script pulls Composio platform stats for each enabled platform (TikTok, Instagram, Facebook), pulls booking data per `bookingTracking.method`, cross-references views↔bookings over a 3-day window, and writes `$HOST_AGENT_HOME/social-marketing/reports/<YYYY-MM-DD>-daily.md` + appends to `$HOST_AGENT_HOME/social-marketing/hook-performance.json`.
+   The script pulls Composio platform stats for each enabled platform (TikTok, Instagram, Facebook), pulls booking data per `bookingTracking.method`, cross-references views↔bookings over a 3-day window, and writes `/host-agent-home/social-marketing/reports/<YYYY-MM-DD>-daily.md` + appends to `/host-agent-home/social-marketing/hook-performance.json`.
 3. `read_file` the daily report; extract the Telegram-summary block at the bottom (script prints `---TELEGRAM-SUMMARY---` markers).
 4. `memory` append the day's diagnosis + action so next session knows yesterday's verdict.
 5. Return the 5-sentence summary to the orchestrator.
@@ -34,7 +34,7 @@ Uses Hermes's native tools for research (`web_search`, `web_extract`, `browser_n
 **Execution:**
 
 1. Compute date tokens: `<current month>`, `<current year>`, `<current month year>`.
-2. `read_file` `$HOST_AGENT_HOME/social-marketing/config.json` for `country` (gates the local-market query bucket).
+2. `read_file` `/host-agent-home/social-marketing/config.json` for `country` (gates the local-market query bucket).
 3. Invoke `web_search` for each query in the buckets below — parallelize if Hermes supports multi-query. Full query list: [references/trend-queries.md](references/trend-queries.md).
    - Platform updates (algorithm changes, format rollouts)
    - Viral formats in restaurant / food niche
@@ -42,8 +42,8 @@ Uses Hermes's native tools for research (`web_search`, `web_extract`, `browser_n
    - Local market (Sweden / Norway when `country in [SE, NO]`)
 4. For each result, `web_extract` for body content when the snippet isn't enough.
 5. Synthesize findings — you (LLM) do the synthesis, not a script. Write:
-   - Structured: `$HOST_AGENT_HOME/social-marketing/trend-report.json` (schema in [references/trend-queries.md](references/trend-queries.md))
-   - Narrative: `$HOST_AGENT_HOME/social-marketing/reports/trend-reports/<YYYY-MM-DD>-weekly.md`
+   - Structured: `/host-agent-home/social-marketing/trend-report.json` (schema in [references/trend-queries.md](references/trend-queries.md))
+   - Narrative: `/host-agent-home/social-marketing/reports/trend-reports/<YYYY-MM-DD>-weekly.md`
    (use `patch` or `terminal` to write)
 6. `memory` append: the top new format found + whether to test next week.
 7. Return Monday summary to orchestrator:
@@ -62,7 +62,7 @@ Runs after every Module B completes, and after every 5 posts (whichever comes fi
    - Average `viewsDelta` and `bookingsDelta`.
    - Count consecutive misses (<1K views twice → drop signal).
 3. Compare against the trend report — any new format flagged `testNext: true`?
-4. Write changes to `$HOST_AGENT_HOME/social-marketing/skill-updates.json` (append-only log: date, what changed, why).
+4. Write changes to `/host-agent-home/social-marketing/skill-updates.json` (append-only log: date, what changed, why).
 5. Surface to orchestrator when a category drops from the rotation:
    > *"The price-reveal hook has missed 3 times in a row. Dropping it, switching to [X]."*
 
@@ -76,7 +76,7 @@ What cannot self-update: API keys, platform connections, skill architecture. Tho
 
 **Execution:**
 
-1. `read_file` `$HOST_AGENT_HOME/social-marketing/restaurant-profile.json` for cuisine, location, typicalGuest.
+1. `read_file` `/host-agent-home/social-marketing/restaurant-profile.json` for cuisine, location, typicalGuest.
 2. Use `web_search` to find 3–5 competitor accounts:
    - `"<cuisine> TikTok <city>"` and `"best <cuisine> <city> 2026"`
    - `"<cuisine> Instagram <city>"`
@@ -86,8 +86,8 @@ What cannot self-update: API keys, platform connections, skill architecture. Tho
 4. `web_search` + `web_extract` on Google Maps and TripAdvisor review pages for the top 3 competitors — extract reviewer language (real phrases real customers use).
 5. `web_search` for local press mentions: `"best <cuisine> <city> <year>"`.
 6. Synthesize — write:
-   - Structured: `$HOST_AGENT_HOME/social-marketing/competitor-research.json`
-   - Narrative: `$HOST_AGENT_HOME/social-marketing/reports/competitor/<YYYY-MM-DD>.md`
+   - Structured: `/host-agent-home/social-marketing/competitor-research.json`
+   - Narrative: `/host-agent-home/social-marketing/reports/competitor/<YYYY-MM-DD>.md`
 7. Return a gap-focused summary to the orchestrator — not a competitor-stats dump. Example:
    > *"Nobody in <city> is doing the ingredient-sourcing story format. <Competitor A> has weak CTAs. Our angle: <specific opportunity>."*
 

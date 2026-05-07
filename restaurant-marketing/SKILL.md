@@ -61,6 +61,12 @@ After Q7, send: *"Perfect. Type **generate post** when you want content, or just
 
 ### `generate post`
 
+**HARD RULE — image generation pipeline:**
+You MUST produce slides by shelling out to `/host-agent-home/scripts/generate-slides.js` via the `terminal` tool. **Never call `OPENAI_CREATE_IMAGE` or any image MCP tool directly to make a post.** The script carries the food-photography prompt vocabulary, character seeding, dish/venue reference handling, and the 6-beat blueprint — calling the image tool directly produces generic "AI food photo" results that look fake and miss the restaurant entirely.
+
+**Quality gate:**
+If the script fails (non-zero exit) OR the output dir doesn't contain `slide-1.png` … `slide-6.png` after it returns, send the owner: *"I can't generate images right now — [short reason]."* and stop. Do NOT fall back to one-shot image generation. Better to send nothing than to send weak visuals.
+
 The owner sees: one short ack if it will take >20 sec (*"On it — about 1 minute."*), then the finished images, then *"Ready to post?"*. Nothing else.
 
 Execution:
@@ -69,13 +75,13 @@ Execution:
 2. `memory`: pull last 14 days of post-type history + last 7 scenarios + last 7 dishes (so [content-preparation](../content-preparation/SKILL.md) avoids repetition).
 3. Delegate to [content-preparation](../content-preparation/SKILL.md). It picks a `postType` from [post-types.md](../social-media-seo-hermes/references/post-types.md) FIRST (not a dish — only ~30-40% of posts are dish-feature; the rest are vibe-moment, behind-the-scenes, story, neighborhood, etc.), then a scenario, then (if applicable) a dish. It runs drive-sync (with `--dish` if applicable, else `--no-dish`), builds the postType-specific sceneArc per the beats-3-4 table, writes prompts.json + texts.json, runs `generate-slides.js` and `add-text-overlay.js`.
    - If drive-sync exits 2 (no venue photos): STOP. Tell the owner naturally: *"I need a few photos of your space first — add some to your Drive venue folder, then we can post."*
-4. content-preparation returns a directory with `slide-1.png` … `slide-6.png` + `caption.txt` + `metadata.json` (which records postType, scenario, dish, hook).
+4. content-preparation returns a directory with `slide-1.png` … `slide-6.png` + `caption.txt` + `metadata.json` (which records postType, scenario, dish, hook). **Verify all 6 slide files exist before showing the owner anything.** Missing files = quality gate failure (see HARD RULE above).
 5. Attach all slides to Telegram by calling Hermes's native Telegram-send tool (or the Composio Telegram tool — Hermes owns the bot connection, the skill never touches `config.telegram` because that block doesn't exist). Send images as file attachments, not as text descriptions.
 6. Send the caption as a follow-up text message.
 7. Ask: *"Ready to post?"*
 8. On yes, for each enabled platform in `config.platforms`, invoke `terminal`:
    ```bash
-   node /host-agent-home/restaurant-social-marketing-skill/scripts/post-to-<platform>.js \
+   node /host-agent-home/scripts/post-to-<platform>.js \
      --config /host-agent-home/social-marketing/config.json \
      --dir /host-agent-home/social-marketing/posts/<timestamp>
    ```

@@ -6,14 +6,14 @@ Every external dependency can fail. The pipeline must degrade gracefully — nev
 
 Cascade:
 
-1. Drive sync fails (platform API error, network, expired OAuth) → fall back to the last successful local cache at `$HOST_AGENT_HOME/social-marketing/photos/`.
+1. Drive sync fails (platform API error, network, expired OAuth) → fall back to the last successful local cache at `/host-agent-home/social-marketing/photos/`.
 2. No local cache → fall back to txt2img generation using `restaurant-profile.json` + knowledge-base context.
 3. No knowledge-base beyond profile → txt2img with profile only.
 
 **Notify the owner only if the cache is older than 7 days.** Use `terminal` to check cache mtime:
 
 ```
-find $HOST_AGENT_HOME/social-marketing/photos -maxdepth 2 -type f -name '*.jpg' -mtime -7 | head -1
+find /host-agent-home/social-marketing/photos -maxdepth 2 -type f -name '*.jpg' -mtime -7 | head -1
 ```
 
 If empty, tell the owner:
@@ -23,11 +23,11 @@ Do NOT notify for transient failures with a fresh cache.
 
 ## platform API post failure (platform posting)
 
-1. Log error to `$HOST_AGENT_HOME/social-marketing/errors.json` (append JSON lines).
+1. Log error to `/host-agent-home/social-marketing/errors.json` (append JSON lines).
 2. Retry once after 60 seconds via `terminal`.
 3. If retry fails → notify owner:
    > *"Couldn't post to [platform] — looks like a connection issue. Want me to try again, or save this for later?"*
-4. Save the post payload (images + caption) to `$HOST_AGENT_HOME/social-marketing/posts/failed/<timestamp>/` so nothing is lost.
+4. Save the post payload (images + caption) to `/host-agent-home/social-marketing/posts/failed/<timestamp>/` so nothing is lost.
 5. **Never silently drop a failed post.**
 
 ## OpenRouter / image generation failure
@@ -45,7 +45,7 @@ Do NOT notify for transient failures with a fresh cache.
 If `send_message` or the Bot API `sendMediaGroup` fails:
 
 1. Log and retry once.
-2. If still failing → fall back to writing the slide paths and caption to a file: `$HOST_AGENT_HOME/social-marketing/posts/<timestamp>/telegram-fallback.txt`.
+2. If still failing → fall back to writing the slide paths and caption to a file: `/host-agent-home/social-marketing/posts/<timestamp>/telegram-fallback.txt`.
 3. Tell owner on the next available channel: *"Slides are ready at `<path>` — Telegram wouldn't accept them just now."*
 
 ## Account / auth errors

@@ -1,6 +1,6 @@
 # Onboarding — 7 Questions
 
-Max 7 questions. One at a time. Conversational. Under 10 minutes. Save each answer to `$HOST_AGENT_HOME/social-marketing/restaurant-profile.json` as you collect it.
+Max 7 questions. One at a time. Conversational. Under 10 minutes. Save each answer to `/host-agent-home/social-marketing/restaurant-profile.json` as you collect it.
 
 ## Profile Schema
 
@@ -69,7 +69,7 @@ Capture the URL if there is one — UTM tracking and the booking CTA in every po
 **Before asking**, silently check the folder. Invoke `terminal`:
 
 ```
-node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js --config $HOST_AGENT_HOME/social-marketing/config.json 2>&1 | tail -10
+node /host-agent-home/scripts/drive-sync.js --config /host-agent-home/social-marketing/config.json 2>&1 | tail -10
 ```
 
 Two paths:

@@ -82,8 +82,8 @@ Return to orchestrator as one sentence of strategic insight:
 
 ## Output Files
 
-- Structured: `$HOST_AGENT_HOME/social-marketing/competitor-research.json` — array of per-competitor objects + a top-level `gapOpportunities` array.
-- Narrative: `$HOST_AGENT_HOME/social-marketing/reports/competitor/<YYYY-MM-DD>.md` — human-readable write-up for the Installer to review.
+- Structured: `/host-agent-home/social-marketing/competitor-research.json` — array of per-competitor objects + a top-level `gapOpportunities` array.
+- Narrative: `/host-agent-home/social-marketing/reports/competitor/<YYYY-MM-DD>.md` — human-readable write-up for the Installer to review.
 
 ## Refresh Cadence
 

@@ -7,7 +7,7 @@ description: Asset pipeline for restaurant social content. Given a dish + contex
 
 You produce posts. The [restaurant-marketing orchestrator](../restaurant-marketing/SKILL.md) decides when; you decide what and how. You never message the owner; errors go back through the orchestrator.
 
-Your output is always the same shape, saved under `$HOST_AGENT_HOME/social-marketing/posts/<YYYY-MM-DD-HHmm>/`:
+Your output is always the same shape, saved under `/host-agent-home/social-marketing/posts/<YYYY-MM-DD-HHmm>/`:
 
 ```
 slide-1.png … slide-6.png        — final images with text overlays
@@ -161,16 +161,16 @@ Drive sync runs *per post*, not on a schedule. Pull venue photos always; dish ph
 
 ```bash
 # When postType uses dish refs (dish-feature, promo, sometimes story/seasonal/event):
-node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js \
-  --config $HOST_AGENT_HOME/social-marketing/config.json \
+node /host-agent-home/scripts/drive-sync.js \
+  --config /host-agent-home/social-marketing/config.json \
   --dish "<dish name>"
 
 # When postType doesn't need dish refs (vibe-moment, behind-the-scenes, regular, neighborhood, trend-driven):
-node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js \
-  --config $HOST_AGENT_HOME/social-marketing/config.json
+node /host-agent-home/scripts/drive-sync.js \
+  --config /host-agent-home/social-marketing/config.json
 ```
 
-Output: `$HOST_AGENT_HOME/social-marketing/photos/last-sync.json` with `venuePhotos[]` + (optionally) `dishPhotos[]`.
+Output: `/host-agent-home/social-marketing/photos/last-sync.json` with `venuePhotos[]` + (optionally) `dishPhotos[]`.
 
 **If the venue folder is empty, fail loud and return to the orchestrator** (exit code 2). The orchestrator should tell the owner: *"I need a few photos of your space first — add them to the venue folder in your Drive."*
 
@@ -212,9 +212,9 @@ Texts file:
 ### Phase 5: Generate slides
 
 ```bash
-node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/generate-slides.js \
-  --config $HOST_AGENT_HOME/social-marketing/config.json \
-  --output $HOST_AGENT_HOME/social-marketing/posts/<timestamp> \
+node /host-agent-home/scripts/generate-slides.js \
+  --config /host-agent-home/social-marketing/config.json \
+  --output /host-agent-home/social-marketing/posts/<timestamp> \
   --prompts /tmp/prompts-<ts>.json \
   --platform <tiktok|instagram|facebook> \
   --urgency <fast|quality>
@@ -227,8 +227,8 @@ Exit 0 + 6 raw PNGs = success. Re-runnable; state.json tracks completed slides.
 ### Phase 6: Add text overlays
 
 ```bash
-node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/add-text-overlay.js \
-  --input $HOST_AGENT_HOME/social-marketing/posts/<timestamp> \
+node /host-agent-home/scripts/add-text-overlay.js \
+  --input /host-agent-home/social-marketing/posts/<timestamp> \
   --texts /tmp/texts-<ts>.json
 ```
 
@@ -242,7 +242,7 @@ Compose the caption yourself (LLM reasoning) using the keyword-first rules from 
 ?utm_source=<platform>&utm_medium=social&utm_campaign=<contentType>&utm_content=<YYYY-MM-DD>
 ```
 
-Write to `$HOST_AGENT_HOME/social-marketing/posts/<timestamp>/caption.txt`.
+Write to `/host-agent-home/social-marketing/posts/<timestamp>/caption.txt`.
 
 ### Phase 8: Write metadata.json
 
@@ -281,7 +281,7 @@ Always check `config.platforms.<name>.enabled` before generating.
 | Instagram | 4:5 portrait  | 6 (up to 10) | Direct publish |
 | Facebook  | 16:9 landscape | Single hero (slide 4) | Single photo |
 
-Paths always `$HOST_AGENT_HOME/social-marketing/…`.
+Paths always `/host-agent-home/social-marketing/…`.
 
 ---
 

@@ -15,8 +15,8 @@ Resolution is cached in `config.googleDrive.resolvedFolders` after the first syn
 ## Sync (on-demand, per post)
 
 ```bash
-node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js \
-  --config $HOST_AGENT_HOME/social-marketing/config.json \
+node /host-agent-home/scripts/drive-sync.js \
+  --config /host-agent-home/social-marketing/config.json \
   --dish "Carbonara"
 ```
 
@@ -45,8 +45,8 @@ Photos in a restaurant's Drive don't change every 30 minutes. Cron syncing is wa
 ## One-Time Setup (Per Restaurant)
 
 ```bash
-node $HOST_AGENT_HOME/restaurant-social-marketing-skill/scripts/drive-sync.js \
-  --config $HOST_AGENT_HOME/social-marketing/config.json \
+node /host-agent-home/scripts/drive-sync.js \
+  --config /host-agent-home/social-marketing/config.json \
   --refresh-folders
 ```
 

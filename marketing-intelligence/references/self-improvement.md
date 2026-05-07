@@ -4,9 +4,9 @@ Runs after every Module B (weekly research) and after every 5 posts.
 
 ## Inputs
 
-- Last 20 `hook-performance` records from `memory` or `$HOST_AGENT_HOME/social-marketing/hook-performance.json`.
-- Current `$HOST_AGENT_HOME/social-marketing/strategy.json`.
-- Latest `$HOST_AGENT_HOME/social-marketing/trend-report.json`.
+- Last 20 `hook-performance` records from `memory` or `/host-agent-home/social-marketing/hook-performance.json`.
+- Current `/host-agent-home/social-marketing/strategy.json`.
+- Latest `/host-agent-home/social-marketing/trend-report.json`.
 
 ## Decision Logic
 

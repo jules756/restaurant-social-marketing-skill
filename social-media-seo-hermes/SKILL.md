@@ -14,7 +14,7 @@ When writing a post's hook (slide 1 text):
 1. Read `restaurant-profile.json` and any prior `memory` entries for what this restaurant's hooks have done.
 2. Pick a category from the library below that fits the content type (regular dish post, promo, knowledge-base story, etc.).
 3. Write 2-3 hook variants in that category's pattern. Use the restaurant's voice, not the template's.
-4. If a trend report exists (`$HOST_AGENT_HOME/social-marketing/trend-report.json`), bias toward hook formats flagged as trending.
+4. If a trend report exists (`/host-agent-home/social-marketing/trend-report.json`), bias toward hook formats flagged as trending.
 5. After posting, log the chosen hook + category to `memory` so future runs know what's been tried and what worked.
 
 ## Hook Library
