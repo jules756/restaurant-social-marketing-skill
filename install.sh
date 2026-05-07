@@ -246,29 +246,42 @@ cp "$SKILL_DIR/package.json" "$AGENT_HOME/package.json"
 [[ -f "$SKILL_DIR/package-lock.json" ]] && cp "$SKILL_DIR/package-lock.json" "$AGENT_HOME/package-lock.json"
 echo "  ✓ scripts copied → $AGENT_HOME/scripts/"
 
-# 6. On-boot hook. Runs inside the Hermes container; provisions MCP
-#    servers when the per-userId map in config is still empty.
+# 6. On-boot hook. Runs inside the Hermes container on every boot.
+#    VERIFY-ONLY: checks that config exists and reports state. Does NOT
+#    provision MCP servers — that happens only when the user explicitly
+#    runs setup.js (manually or via --force). The on-boot hook used to
+#    auto-run setup.js, which clobbered working config.yaml entries on
+#    every restart. Never again.
 HOOK_FILE="$HERMES_HOME/hooks/on-boot/restaurant-social-marketing-skill.sh"
 mkdir -p "$HERMES_HOME/hooks/on-boot"
 cat > "$HOOK_FILE" <<'HOOK'
 #!/bin/bash
 # Auto-installed by restaurant-social-marketing-skill/install.sh.
-# Runs inside the Hermes container on every boot. Idempotent.
+# Runs inside the Hermes container on every boot.
+# VERIFY-ONLY — never mutates config or provisions servers.
 set -euo pipefail
 AGENT_HOME="${HOST_AGENT_HOME:-/host-agent-home}"
 CONFIG="$AGENT_HOME/social-marketing/config.json"
 SCRIPTS_DIR="$AGENT_HOME/scripts"
 
-[[ -f "$CONFIG" ]] || { echo "[restaurant-marketing] no $CONFIG yet — skipping"; exit 0; }
-[[ -d "$SCRIPTS_DIR" ]] || { echo "[restaurant-marketing] scripts not found at $SCRIPTS_DIR — re-run install.sh on host"; exit 0; }
+if [[ ! -f "$CONFIG" ]]; then
+  echo "[restaurant-marketing] no $CONFIG yet — owner needs to message Hermes to start onboarding"
+  exit 0
+fi
+if [[ ! -d "$SCRIPTS_DIR" ]]; then
+  echo "[restaurant-marketing] scripts not found at $SCRIPTS_DIR — re-run install.sh on host"
+  exit 0
+fi
 
-# If mcpServerUrls is empty (no userIds provisioned yet), run setup.
 URLS_COUNT="$(jq -r '.composio.mcpServerUrls | length' "$CONFIG" 2>/dev/null || echo 0)"
 if [[ "$URLS_COUNT" == "0" ]]; then
-  echo "[restaurant-marketing] provisioning Composio MCP servers"
-  cd "$AGENT_HOME"
-  node "$SCRIPTS_DIR/setup.js" --config "$CONFIG" || \
-    echo "[restaurant-marketing] setup.js failed — fix config.json (composio.apiKey, defaultUserId, userIdOverrides) then restart"
+  echo "[restaurant-marketing] config.composio.mcpServerUrls is empty."
+  echo "[restaurant-marketing] If you already have a Composio MCP entry in /opt/data/config.yaml,"
+  echo "[restaurant-marketing] Hermes will use that — no action needed."
+  echo "[restaurant-marketing] Otherwise run inside this container:"
+  echo "[restaurant-marketing]   node /host-agent-home/scripts/setup.js --config $CONFIG --force"
+else
+  echo "[restaurant-marketing] ✓ $URLS_COUNT MCP server URL(s) configured"
 fi
 HOOK
 chmod +x "$HOOK_FILE"

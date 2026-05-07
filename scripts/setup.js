@@ -28,8 +28,10 @@ const {
 
 const args = process.argv.slice(2);
 const getArg = (n) => { const i = args.indexOf(`--${n}`); return i !== -1 ? args[i + 1] : null; };
+const hasFlag = (n) => args.includes(`--${n}`);
 const configPath = getArg('config');
-if (!configPath) { console.error('Usage: node setup.js --config <config.json>'); process.exit(1); }
+const force = hasFlag('force');
+if (!configPath) { console.error('Usage: node setup.js --config <config.json> [--force]'); process.exit(1); }
 
 const checks = [];
 const record = (label, ok, fix) => {
@@ -168,6 +170,19 @@ function serverNameFor(userId) {
   console.log(`\n=== Restaurant Marketing — Setup ===`);
   console.log(`Config: ${configPath}\n`);
   const config = loadConfig();
+
+  // 0. If MCP servers are already provisioned, bail out unless --force.
+  // This is the most important check in the file. Earlier the on-boot
+  // hook ran setup.js on every container restart, which re-provisioned
+  // servers and clobbered working config.yaml entries. Now: if URLs
+  // already exist in config.json, OR config.yaml has a Composio MCP
+  // entry, do nothing. Only --force overrides this.
+  const existingUrls = config.composio?.mcpServerUrls || {};
+  if (!force && Object.keys(existingUrls).length > 0) {
+    console.log(`✓ ${Object.keys(existingUrls).length} MCP server URL(s) already configured.`);
+    console.log(`  To re-provision, re-run with --force.`);
+    process.exit(0);
+  }
 
   // 1. Shape
   const apiKey = config.composio?.apiKey;
