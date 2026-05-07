@@ -42,7 +42,10 @@ SKILL_DATA_DIR="$AGENT_HOME/social-marketing"
 CONFIG="$SKILL_DATA_DIR/config.json"
 CRON_TAG="# restaurant-social-marketing-skill@$AGENT"
 
-uninstall_cron_and_hook() {
+# Remove just the cron block for this agent. Used both during --uninstall
+# and during install (idempotent cron — clears the old block before
+# re-writing). MUST NOT touch the on-boot hook.
+remove_cron_block() {
   echo "→ Removing cron jobs tagged '$CRON_TAG'"
   if crontab -l 2>/dev/null | grep -q "$CRON_TAG"; then
     crontab -l 2>/dev/null | sed "/$CRON_TAG\$/,/$CRON_TAG END\$/d" | crontab -
@@ -50,12 +53,19 @@ uninstall_cron_and_hook() {
   else
     echo "  none found."
   fi
+}
+
+# Remove the on-boot hook. ONLY called during --uninstall, NEVER during
+# fresh install (we just wrote the hook in step 5; deleting it here would
+# break MCP provisioning on next container restart).
+remove_on_boot_hook() {
   echo "→ Removing on-boot hook"
   rm -f "$HERMES_HOME/hooks/on-boot/restaurant-social-marketing-skill.sh"
 }
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-  uninstall_cron_and_hook
+  remove_cron_block
+  remove_on_boot_hook
   echo "Done. $SKILL_DATA_DIR is kept; delete manually for full wipe."
   exit 0
 fi
@@ -156,8 +166,11 @@ if [[ ! -e "$AGENT_HOME/restaurant-social-marketing-skill" ]]; then
   echo "  ✓ symlinked skill repo into $AGENT_HOME/"
 fi
 
-# 8. Register cron jobs (substitute AGENT_HOME + SKILL_DIR placeholders)
-uninstall_cron_and_hook >/dev/null 2>&1 || true
+# 8. Register cron jobs (substitute AGENT_HOME + SKILL_DIR placeholders).
+# IMPORTANT: clear ONLY the cron block, NOT the on-boot hook we just wrote
+# in step 5. Earlier this called uninstall_cron_and_hook which deleted the
+# hook it had just written 100 lines earlier. Took hours to find.
+remove_cron_block >/dev/null 2>&1 || true
 TMP_CRON="$(mktemp)"
 trap "rm -f $TMP_CRON" EXIT
 crontab -l 2>/dev/null > "$TMP_CRON" || true
