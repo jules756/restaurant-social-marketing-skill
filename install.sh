@@ -70,6 +70,127 @@ if [[ "${1:-}" == "--uninstall" ]]; then
   exit 0
 fi
 
+# ─── --diagnose: print install state, no changes ──────────────────────
+if [[ "${1:-}" == "--diagnose" ]]; then
+  HOOK_PATH="$HERMES_HOME/hooks/on-boot/restaurant-social-marketing-skill.sh"
+  echo "============ DIAGNOSTIC ($(date -Is)) ============"
+  echo "agent:           $AGENT"
+  echo "skill repo:      $SKILL_DIR"
+  echo "Hermes home:     $HERMES_HOME"
+  echo "Agent home:      $AGENT_HOME"
+  echo "Config:          $CONFIG"
+  echo
+  echo "─── Skill repo ─────────────────────────────────"
+  ( cd "$SKILL_DIR" && git log --oneline -1 ) 2>&1
+  echo
+  echo "─── Hermes home permissions ────────────────────"
+  if [[ -d "$HERMES_HOME" ]]; then
+    stat -c '%U:%G %a %n' "$HERMES_HOME" 2>/dev/null || echo "(stat not available — try ls -la)"
+    if [[ -r "$HERMES_HOME" ]]; then
+      echo "  contents:"; ls -1 "$HERMES_HOME" 2>&1 | head -20
+    else
+      echo "  ✗ NOT readable by $(id -un) — needs: sudo chown -R \"\$(id -u):\$(id -g)\" $HERMES_HOME"
+    fi
+  else
+    echo "✗ $HERMES_HOME does not exist"
+  fi
+  echo
+  echo "─── On-boot hook ───────────────────────────────"
+  if [[ -f "$HOOK_PATH" ]]; then
+    echo "✓ present: $HOOK_PATH ($(wc -c < "$HOOK_PATH" 2>/dev/null || echo "?") bytes)"
+    head -5 "$HOOK_PATH" 2>/dev/null | sed 's/^/    /'
+  elif [[ -e "$HOOK_PATH" ]]; then
+    echo "✗ exists but not a regular file: $HOOK_PATH"
+  else
+    echo "✗ MISSING: $HOOK_PATH"
+  fi
+  echo
+  echo "─── Skill folders in Hermes home ───────────────"
+  if [[ -r "$HERMES_HOME/skills" ]]; then
+    for s in restaurant-marketing content-preparation marketing-intelligence \
+             food-photography-hermes social-media-seo-hermes social-trend-monitor-hermes xurl; do
+      [[ -d "$HERMES_HOME/skills/$s" ]] && echo "  ✓ $s" || echo "  ✗ $s MISSING"
+    done
+  else
+    echo "  ✗ $HERMES_HOME/skills not readable"
+  fi
+  echo
+  echo "─── SOUL.md ────────────────────────────────────"
+  [[ -f "$HERMES_HOME/SOUL.md" ]] && echo "✓ present ($(wc -c < "$HERMES_HOME/SOUL.md") bytes)" || echo "✗ MISSING"
+  echo
+  echo "─── Agent home (data dir + scripts) ────────────"
+  if [[ -d "$AGENT_HOME" ]]; then
+    [[ -d "$AGENT_HOME/scripts" ]] && echo "✓ scripts/ present ($(ls "$AGENT_HOME/scripts" 2>/dev/null | wc -l) files)" || echo "✗ scripts/ MISSING — install Phase B (Option B copy) didn't run"
+    [[ -d "$AGENT_HOME/node_modules" ]] && echo "✓ node_modules/ present ($(ls "$AGENT_HOME/node_modules" 2>/dev/null | wc -l) packages)" || echo "✗ node_modules/ MISSING — npm install didn't run"
+    [[ -f "$AGENT_HOME/package.json" ]] && echo "✓ package.json present" || echo "✗ package.json MISSING"
+  else
+    echo "✗ $AGENT_HOME does not exist"
+  fi
+  echo
+  echo "─── Config.json ────────────────────────────────"
+  if [[ -f "$CONFIG" ]]; then
+    echo "✓ present"
+    if command -v jq >/dev/null 2>&1; then
+      jq '.composio | { apiKey: (.apiKey | if . == "" then "EMPTY" else "SET (\(. | length) chars)" end), defaultUserId, userIdOverrides, mcpServerUrls: (.mcpServerUrls | length), mcpServerIds: (.mcpServerIds | length) }' "$CONFIG"
+      echo "  platforms enabled:"
+      jq -r '.platforms | to_entries[] | select(.value.enabled) | "    ✓ \(.key)"' "$CONFIG"
+    else
+      echo "  (install jq for full diagnosis: sudo apt-get install -y jq)"
+    fi
+  else
+    echo "✗ MISSING: $CONFIG"
+  fi
+  echo
+  echo "─── Cron block ─────────────────────────────────"
+  if crontab -l 2>/dev/null | grep -q "$CRON_TAG"; then
+    echo "✓ cron block present:"
+    crontab -l 2>/dev/null | grep -A 100 "$CRON_TAG\$" | grep -B 100 "$CRON_TAG END\$" | head -10 | sed 's/^/    /'
+  else
+    echo "✗ cron block MISSING"
+  fi
+  echo
+  echo "─── Container ──────────────────────────────────"
+  CONTAINER="hermes-$AGENT"
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^$CONTAINER$"; then
+    echo "✓ container '$CONTAINER' running"
+    echo "  last 5 on-boot-hook log lines:"
+    docker logs "$CONTAINER" 2>&1 | grep -E "on-boot|restaurant-marketing|setup\.js" | tail -5 | sed 's/^/    /' || echo "    (none)"
+  else
+    echo "✗ container '$CONTAINER' not running (or docker not accessible)"
+  fi
+  echo
+  echo "============ END DIAGNOSTIC ============"
+  exit 0
+fi
+
+# ─── --repair: auto-fix common install issues ─────────────────────────
+if [[ "${1:-}" == "--repair" ]]; then
+  echo "→ Repair mode for agent '$AGENT'"
+  if [[ ! -d "$HERMES_HOME" ]]; then
+    echo "✗ $HERMES_HOME does not exist — spawn the agent first: bash ~/hermes-install/new-agent.sh $AGENT"
+    exit 1
+  fi
+  CURRENT_OWNER="$(stat -c '%U' "$HERMES_HOME" 2>/dev/null)"
+  ME="$(id -un)"
+  if [[ "$CURRENT_OWNER" != "$ME" ]]; then
+    echo "→ $HERMES_HOME is owned by '$CURRENT_OWNER', not '$ME' — chowning"
+    if sudo -n true 2>/dev/null; then
+      sudo chown -R "$(id -u):$(id -g)" "$HERMES_HOME"
+      echo "  ✓ ownership reclaimed"
+    else
+      echo "  ⚠ sudo requires password. Run this manually then re-run --repair:"
+      echo "    sudo chown -R \"\$(id -u):\$(id -g)\" $HERMES_HOME"
+      exit 1
+    fi
+  fi
+  if [[ ! -d "$AGENT_HOME" ]]; then
+    mkdir -p "$AGENT_HOME"
+    echo "  ✓ created $AGENT_HOME"
+  fi
+  echo "→ Running full install (idempotent — keeps existing config.json)"
+  exec bash "$0"   # fall through to main install with same env
+fi
+
 if [[ ! -d "$HERMES_HOME" ]]; then
   echo "✗ $HERMES_HOME not found."
   echo "  Spawn this agent first: bash ~/hermes-install/new-agent.sh $AGENT"
