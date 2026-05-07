@@ -34,7 +34,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { callTool, loadConfig, findToolByPattern, listAllTools } = require('./mcp-client');
+const { loadConfig } = require('./mcp-client');
+const { generateImage: dualGenerate } = require('./image-gen');
 const { readState, writeState } = require('./state-helpers');
 
 const args = process.argv.slice(2);
@@ -57,7 +58,7 @@ if (!configPath || !outputDir || !promptsPath) {
 
 const config = loadConfig(configPath);
 const prompts = JSON.parse(fs.readFileSync(promptsPath, 'utf-8'));
-const model = 'gpt-image-2';
+const model = config.imageGen?.model || 'gpt-image-2';
 const MAX_REFS = 4;   // OPENAI_CREATE_IMAGE_EDIT supports up to 16; cap at 4 for clarity + cost.
 
 const PLATFORM_SIZE = {
@@ -132,51 +133,6 @@ if ((sync.venuePhotos || []).length === 0) {
 const venueRef = pickVenueRef(sync);
 const dishRef = pickDishRef(sync);
 
-// ─── Tool resolution (txt2img + img2img) ────────────────────────────────
-let _txt2imgSlug = null;
-let _img2imgSlug = null;
-
-async function resolveImageTools() {
-  if (_txt2imgSlug && _img2imgSlug) return;
-  if (config.imageGen?.toolSlug) _txt2imgSlug = config.imageGen.toolSlug;
-  if (config.imageGen?.editToolSlug) _img2imgSlug = config.imageGen.editToolSlug;
-
-  if (!_txt2imgSlug) {
-    const found = await findToolByPattern(config, /^OPENAI_CREATE_IMAGE$/i);
-    if (found) _txt2imgSlug = found.tool.name;
-    else {
-      const fuzzy = await findToolByPattern(config, /^OPENAI_.*IMAGE.*GENERAT/i);
-      if (!fuzzy) {
-        const all = await listAllTools(config);
-        const names = all.map((t) => t.name).slice(0, 30).join(', ');
-        throw new Error(`No OpenAI text-to-image tool. First tools: ${names}`);
-      }
-      _txt2imgSlug = fuzzy.tool.name;
-    }
-  }
-  if (!_img2imgSlug) {
-    const found = await findToolByPattern(config, /^OPENAI_CREATE_IMAGE_EDIT$/i);
-    if (found) _img2imgSlug = found.tool.name;
-  }
-  if (!_img2imgSlug) {
-    throw new Error(
-      'OPENAI_CREATE_IMAGE_EDIT not advertised by the MCP server. ' +
-      'img2img with reference photos is mandatory for this skill (slides 2–6 need character + venue continuity). ' +
-      'Confirm OpenAI is connected on the right userId in Composio.'
-    );
-  }
-}
-
-function extractImageB64(result) {
-  const candidates = [
-    result?.data?.[0]?.b64_json, result?.data?.b64_json,
-    result?.images?.[0]?.b64_json, result?.images?.[0]?.b64,
-    result?.b64_json, result?.image_b64,
-  ];
-  for (const c of candidates) if (typeof c === 'string' && c.length > 0) return c;
-  return null;
-}
-
 // ─── Prompt construction ────────────────────────────────────────────────
 const DOCUMENTARY_ANCHORS = [
   'documentary food photography, candid moment',
@@ -239,34 +195,15 @@ const ARCHETYPE_GUIDANCE = {
   'text-led': 'Moody backdrop image. Single texture or surface. Low contrast. Leaves the top two-thirds open for overlay text.',
 };
 
-// ─── Image generation ───────────────────────────────────────────────────
+// ─── Image generation (dual backend: azure primary, composio fallback) ──
 async function generateImage(promptText, references, outPath) {
-  await resolveImageTools();
-  const useEdit = references.length > 0;
-  const slug = useEdit ? _img2imgSlug : _txt2imgSlug;
-
-  const baseArgs = {
+  const { buf, backend } = await dualGenerate(config, {
     prompt: promptText,
-    model,
-    n: 1,
     size: PLATFORM_SIZE[platform],
-  };
-  let toolArgs;
-  if (useEdit) {
-    toolArgs = {
-      ...baseArgs,
-      images: references.map((p) => ({ image_url: path.resolve(p) })),
-    };
-  } else {
-    toolArgs = { ...baseArgs, response_format: 'b64_json' };
-  }
-
-  const result = await callTool(config, slug, toolArgs);
-  if (result?.error) throw new Error(result.error?.message || JSON.stringify(result.error).slice(0, 300));
-  const b64 = extractImageB64(result);
-  if (!b64) throw new Error(`No image in ${slug} response. First 300 chars: ${JSON.stringify(result).slice(0, 300)}`);
-  fs.writeFileSync(outPath, Buffer.from(b64, 'base64'));
-  return slug;
+    references,
+  });
+  fs.writeFileSync(outPath, buf);
+  return backend;
 }
 
 async function withRetry(fn, label, retries = 2) {

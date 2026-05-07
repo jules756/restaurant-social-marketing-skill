@@ -14,21 +14,25 @@
 # It is NOT scheduled — restaurants don't add photos every 30 min, and
 # we'd rather pay the sync cost when generating, not idly.
 
+# All cron jobs run INSIDE the Hermes container via `docker exec`. The
+# scripts need /host-agent-home paths (which only resolve inside the
+# container) and /opt/data/config.yaml access (for MCP wiring), so running
+# on the host directly doesn't work.
+
 # Auto-post — daily 11:00 (matches default config.posting.schedule[0]).
 # End-to-end: scenario pick → drive sync → generate → overlay → post → notify.
 # Respects config.posting.autoPost.{enabled, paused, lastPostedAt, consecutiveFailures}.
-# Use /pause and /resume in Telegram to control without touching config.
-# To change the time, edit the cron line below AND config.posting.schedule[0].
-0 11 * * * cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/auto-post.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/auto-post.log 2>&1
+# Tell the agent in Telegram "pause posting" / "resume posting" to control it.
+0 11 * * * docker exec hermes-{{AGENT}} node /host-agent-home/scripts/auto-post.js --config /host-agent-home/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/auto-post.log 2>&1
 
 # Daily analytics — 08:00 every day. Writes a report file Hermes reads later.
-0 8 * * * cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/daily-report.js --config {{AGENT_HOME}}/social-marketing/config.json --days 3 >> {{AGENT_HOME}}/social-marketing/logs/daily-report.log 2>&1
+0 8 * * * docker exec hermes-{{AGENT}} node /host-agent-home/scripts/daily-report.js --config /host-agent-home/social-marketing/config.json --days 3 >> {{AGENT_HOME}}/social-marketing/logs/daily-report.log 2>&1
 
 # Weekly trend research — Monday 07:00. Writes trend-report.json + narrative MD.
-0 7 * * 1 cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/weekly-research.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/weekly-research.log 2>&1
+0 7 * * 1 docker exec hermes-{{AGENT}} node /host-agent-home/scripts/weekly-research.js --config /host-agent-home/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/weekly-research.log 2>&1
 
 # Weekly competitor research — Monday 07:30. Writes competitor-research.json + narrative MD.
-30 7 * * 1 cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/competitor-research.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/competitor-research.log 2>&1
+30 7 * * 1 docker exec hermes-{{AGENT}} node /host-agent-home/scripts/competitor-research.js --config /host-agent-home/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/competitor-research.log 2>&1
 
 # Daily aggregator — 23:30. Roll up the day's events.
-30 23 * * * cd {{AGENT_HOME}}/social-marketing && node {{AGENT_HOME}}/scripts/aggregator.js --config {{AGENT_HOME}}/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/aggregator.log 2>&1
+30 23 * * * docker exec hermes-{{AGENT}} node /host-agent-home/scripts/aggregator.js --config /host-agent-home/social-marketing/config.json >> {{AGENT_HOME}}/social-marketing/logs/aggregator.log 2>&1

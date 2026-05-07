@@ -25,8 +25,18 @@
     "utmSource": "social"
   },
   "imageGen": {
-    "_comment": "Optional escape hatch: pin a specific Composio tool slug if MCP discovery picks the wrong one. Default leaves it blank and lets generate-slides.js find an OpenAI image-generation tool by pattern.",
-    "toolSlug": ""
+    "_comment": "Two backends: 'azure' is a direct OpenAI-compatible endpoint (Azure or your own proxy), 'composio' goes through Composio MCP. primary controls which is tried first; fallbackOnError swaps to the other on failure. Default model is gpt-image-2. azure.apiKeyEnv names the env var that holds the key (do NOT paste the key here).",
+    "primary": "composio",
+    "fallbackOnError": true,
+    "model": "gpt-image-2",
+    "azure": {
+      "baseUrl": "",
+      "apiKeyEnv": "AZURE_OPENAI_API_KEY",
+      "deployment": ""
+    },
+    "composio": {
+      "toolSlug": ""
+    }
   },
   "research": {
     "_comment": "Override the model used by weekly-research.js. Default: perplexity/sonar (web search built in). Routed through OPENROUTER_CHAT_COMPLETIONS via Composio MCP.",
@@ -35,7 +45,7 @@
   "timezone": "Europe/Stockholm",
   "country": "SE",
   "posting": {
-    "_comment": "schedule: array of HH:MM (24h, local timezone) when auto-post fires. Add multiple for lunch+dinner posts. autoPost.enabled toggles the whole feature; .paused is set by /pause and /resume slash commands; .lastPostedAt and .consecutiveFailures are written by auto-post.js — leave blank initially.",
+    "_comment": "schedule: array of HH:MM (24h, local timezone) when auto-post fires. Add multiple for lunch+dinner posts. autoPost.enabled toggles the whole feature; .paused is set when the owner says 'pause posting' / 'resume posting' on Telegram; .lastPostedAt and .consecutiveFailures are written by auto-post.js — leave blank initially.",
     "schedule": ["11:00"],
     "autoPost": {
       "enabled": true,

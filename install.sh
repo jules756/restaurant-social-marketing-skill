@@ -197,6 +197,32 @@ if [[ ! -d "$HERMES_HOME" ]]; then
   exit 1
 fi
 
+# ─── Auto-chown if container has reclaimed ownership ───────────────────
+# When new-agent.sh launches the Hermes container, it chowns the data dir
+# to its in-container UID (usually 10000). The host user can't write into
+# it after that. This block detects ownership mismatch and chowns back
+# automatically. Sudo prompts once if needed; declines fall through to a
+# clear error.
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
+DIR_UID="$(stat -c '%u' "$HERMES_HOME" 2>/dev/null || echo "$HOST_UID")"
+if [[ "$DIR_UID" != "$HOST_UID" ]]; then
+  echo "→ $HERMES_HOME is owned by uid $DIR_UID, not $HOST_UID — fixing"
+  if sudo -n true 2>/dev/null; then
+    sudo chown -R "$HOST_UID:$HOST_GID" "$HERMES_HOME"
+    echo "  ✓ ownership fixed"
+  else
+    echo "  (sudo password prompt — needed to chown back from container UID)"
+    if sudo chown -R "$HOST_UID:$HOST_GID" "$HERMES_HOME"; then
+      echo "  ✓ ownership fixed"
+    else
+      echo "✗ chown declined or failed. Run manually then re-run install.sh:"
+      echo "    sudo chown -R \"\$(id -u):\$(id -g)\" $HERMES_HOME"
+      exit 1
+    fi
+  fi
+fi
+
 echo "→ Installing Restaurant Social Marketing skill"
 echo "  agent:        $AGENT"
 echo "  Hermes home:  $HERMES_HOME"
@@ -223,6 +249,11 @@ fi
 echo "  ✓ installed SOUL.md → $HERMES_HOME/SOUL.md"
 
 # 4. Skill folders → $HERMES_HOME/skills/<skill>/.
+#    Then whitelist: delete any other bundled skill that ships with Hermes.
+#    They compete with our skills for routing — `social-media`, `media`,
+#    `autonomous-ai-agents` are particular offenders for "generate post"
+#    type requests. Without this whitelist, Composio logs stay empty
+#    because Hermes uses its in-process image gen instead of MCP.
 mkdir -p "$HERMES_HOME/skills"
 SKILL_NAMES=(restaurant-marketing content-preparation marketing-intelligence \
              food-photography-hermes social-media-seo-hermes social-trend-monitor-hermes xurl)
@@ -232,7 +263,18 @@ for skill in "${SKILL_NAMES[@]}"; do
     cp -r "$SKILL_DIR/$skill" "$HERMES_HOME/skills/$skill"
   fi
 done
-echo "  ✓ installed ${#SKILL_NAMES[@]} skill folders → $HERMES_HOME/skills/"
+# Keep our skills + `mcp` (Hermes's own MCP integration). Delete everything else.
+KEEP_SKILLS="restaurant-marketing content-preparation marketing-intelligence food-photography-hermes social-media-seo-hermes social-trend-monitor-hermes xurl mcp"
+removed_count=0
+for d in "$HERMES_HOME/skills/"*/; do
+  [[ -d "$d" ]] || continue
+  skill_name="$(basename "$d")"
+  if ! echo " $KEEP_SKILLS " | grep -q " $skill_name "; then
+    rm -rf "$d"
+    removed_count=$((removed_count + 1))
+  fi
+done
+echo "  ✓ installed ${#SKILL_NAMES[@]} skill folders, removed $removed_count competing bundled skills"
 
 # 5. Copy scripts/ + package.json into the agent's data dir so the in-
 #    container on-boot hook can find them at $HOST_AGENT_HOME/scripts/
@@ -318,7 +360,7 @@ trap "rm -f $TMP_CRON" EXIT
 crontab -l 2>/dev/null > "$TMP_CRON" || true
 {
   echo "$CRON_TAG"
-  sed "s|{{AGENT_HOME}}|$AGENT_HOME|g" "$SKILL_DIR/templates/crontab.template"
+  sed -e "s|{{AGENT_HOME}}|$AGENT_HOME|g" -e "s|{{AGENT}}|$AGENT|g" "$SKILL_DIR/templates/crontab.template"
   echo "$CRON_TAG END"
 } >> "$TMP_CRON"
 crontab "$TMP_CRON"
@@ -328,16 +370,33 @@ cat <<EOF
 
 ✅ Skill installed for agent '$AGENT'.
 
-Two fields in $CONFIG must be set:
-  - composio.apiKey         (your Composio project API key)
-  - composio.defaultUserId  (the userId that owns your connections in Composio)
+What's done:
+  - 7 skill folders installed; competing bundled skills removed
+  - On-boot hook: verify-only (won't clobber working state)
+  - Cron jobs registered
 
-Everything else (which platforms, Drive, etc.) is auto-discovered from
-Composio at setup time.
+Required config — only two fields:
+  $CONFIG
+  - composio.apiKey         (Composio project API key)
+  - composio.defaultUserId  (Composio userId that owns your connections)
+
+Optional — flip the image-gen backend if you have a custom OpenAI endpoint
+(otherwise the default 'composio' works without further config):
+  - imageGen.primary = "azure" | "composio"
+  - imageGen.azure.baseUrl  (e.g. https://yourthing.openai.azure.com/openai/v1)
+  - imageGen.azure.deployment  (model deployment name)
+  - export AZURE_OPENAI_API_KEY="..." in the host shell or container env
 
 Then:
-  docker restart hermes-$AGENT      # picks up SOUL.md + skills
-  docker logs -f hermes-$AGENT      # watch boot
+  docker exec hermes-$AGENT node /host-agent-home/scripts/setup.js \\
+      --config /host-agent-home/social-marketing/config.json
+  docker restart hermes-$AGENT
+  docker logs hermes-$AGENT --tail 50
+
+Setup script will:
+  - provision Composio MCP + per-toolkit allowlist
+  - wire that MCP server into Hermes's config.yaml
+  - print per-toolkit summary (✅ Instagram 5 tools, ✅ Drive 2 tools, …)
 
 Message the agent on Telegram to test.
 

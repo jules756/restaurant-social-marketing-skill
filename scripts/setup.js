@@ -311,20 +311,64 @@ function serverNameFor(userId) {
   saveConfig(config);
   record(`config.composio.mcpServerUrls written for ${Object.keys(newServerUrls).length} userId(s)`, true);
 
-  // 7. Verify by listing tools across every userId.
+  // 7. Verify by listing tools across every userId. Also produce a per-toolkit
+  //    summary so the operator sees ✅ Instagram (5 tools), ✅ Drive (2 tools), …
   resetCache();
+  let allTools = [];
   try {
-    const tools = await listAllTools(config);
-    if (!tools.length) throw new Error('No tools listed across any userId');
-    record(`MCP listing returned ${tools.length} tools across ${userIds.length} userId(s)`, true);
+    allTools = await listAllTools(config);
+    if (!allTools.length) throw new Error('No tools listed across any userId');
+    record(`MCP listing returned ${allTools.length} tools across ${userIds.length} userId(s)`, true);
   } catch (e) {
     record('MCP listing across userIds', false, e.message);
     process.exit(1);
   }
 
+  // Per-toolkit breakdown.
+  const toolkitCounts = {};
+  for (const t of allTools) {
+    const slug = (t.name || '').split('_')[0].toLowerCase();
+    toolkitCounts[slug] = (toolkitCounts[slug] || 0) + 1;
+  }
+  console.log('\n   Connected toolkits:');
+  for (const [slug, count] of Object.entries(toolkitCounts).sort()) {
+    console.log(`     ✅ ${slug.padEnd(15)} ${count} tool(s)`);
+  }
+
+  // 8. Wire Hermes's own config.yaml so the in-conversation agent can call
+  //    Composio. Only attempt this if we're inside the container (path exists).
+  const hermesConfig = '/opt/data/config.yaml';
+  if (fs.existsSync(hermesConfig)) {
+    const wireScript = path.join(__dirname, 'wire-hermes-mcp.sh');
+    if (fs.existsSync(wireScript)) {
+      const { execFileSync } = require('child_process');
+      try {
+        execFileSync('bash', [wireScript, configPath], { stdio: 'inherit' });
+        record('Wired Composio MCP into Hermes config.yaml', true);
+      } catch (e) {
+        record('Wired Composio MCP into Hermes config.yaml', false, e.message);
+      }
+    }
+  } else {
+    console.log(`   ℹ Hermes config.yaml not at ${hermesConfig} — skipping in-conversation MCP wiring.`);
+    console.log(`     If running on the host, run inside the container instead:`);
+    console.log(`     docker exec hermes-<agent> node /host-agent-home/scripts/setup.js --config <path>`);
+  }
+
   console.log('\n' + '─'.repeat(60));
   const failed = checks.filter((c) => !c.ok);
   if (!failed.length) { console.log(`✅ All ${checks.length} checks passed.`); process.exit(0); }
-  console.log(`❌ ${failed.length}/${checks.length} failed.`);
+  // Distinguish "critical failed" from "soft failed". A soft failure means
+  // a toolkit isn't connected for this userId — not fatal as long as we
+  // got at least one MCP server provisioned.
+  const criticalFailed = failed.filter((c) =>
+    !c.label.startsWith('auth config') &&
+    !c.label.includes('connected account')
+  );
+  if (criticalFailed.length === 0) {
+    console.log(`✅ ${checks.length - failed.length}/${checks.length} core checks passed (${failed.length} optional toolkit(s) not connected — non-blocking).`);
+    process.exit(0);
+  }
+  console.log(`❌ ${criticalFailed.length} critical / ${failed.length} total checks failed.`);
   process.exit(1);
 })();
