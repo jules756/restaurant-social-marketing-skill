@@ -120,6 +120,13 @@ async function listAllTools(config) {
 /**
  * Find a tool whose name matches a regex, scanning every userId.
  * Returns { tool, userId } or null.
+ *
+ * Tool Router quirk: it only advertises 6 dispatcher tools, so an exact
+ * match for e.g. /OPENAI_CREATE_IMAGE_EDIT/ never finds anything. To work
+ * around: if no direct match found and a Tool Router is reachable, return
+ * a synthetic tool entry with the regex source as the name, so callers
+ * (image-gen.js, etc.) can still produce the slug they want and let
+ * callTool() route it through COMPOSIO_MULTI_EXECUTE_TOOL.
  */
 async function findToolByPattern(config, re) {
   for (const userId of uniqueUserIds(config)) {
@@ -127,30 +134,102 @@ async function findToolByPattern(config, re) {
     const tool = tools.find((t) => re.test(t.name));
     if (tool) return { tool, userId };
   }
+  // Synthesize for Tool Router. Only do this when the regex is anchored
+  // and contains no metacharacters — otherwise we don't know what slug to
+  // produce. Heuristic: ^[A-Z_]+$ between the anchors.
+  const m = String(re).match(/^\/\^([A-Z_]+)\$\/[a-z]*$/);
+  if (m) {
+    for (const userId of uniqueUserIds(config)) {
+      const tools = _toolsByUserId.get(userId) || [];
+      if (tools.some((t) => TOOL_ROUTER_DISPATCHERS.has(t.name))) {
+        return { tool: { name: m[1], _viaDispatcher: true }, userId };
+      }
+    }
+  }
   return null;
 }
 
-/**
- * Call a tool by name. Routes to the right userId's server automatically
- * based on the route cache built during listTools.
- */
-async function callTool(config, name, args = {}) {
-  let userId = _toolToUserId.get(name);
-  if (!userId) {
-    await listAllTools(config);
-    userId = _toolToUserId.get(name);
-    if (!userId) throw new Error(`Tool "${name}" is not exposed by any configured userId.`);
-  }
-  const client = await connectMcp(config, userId);
-  const res = await client.callTool({ name, arguments: args });
+// Names exposed by Composio Tool Router (the dispatcher tools). Any other
+// tool name is a "real" toolkit tool (e.g. OPENAI_CREATE_IMAGE_EDIT) that
+// must be invoked through COMPOSIO_MULTI_EXECUTE_TOOL.
+const TOOL_ROUTER_DISPATCHERS = new Set([
+  'COMPOSIO_MANAGE_CONNECTIONS',
+  'COMPOSIO_MULTI_EXECUTE_TOOL',
+  'COMPOSIO_REMOTE_BASH_TOOL',
+  'COMPOSIO_REMOTE_WORKBENCH',
+  'COMPOSIO_SEARCH_TOOLS',
+  'COMPOSIO_GET_TOOL_SCHEMAS',
+]);
+
+function unwrap(res, label) {
   if (Array.isArray(res?.content)) {
     const text = res.content.find((c) => c.type === 'text')?.text;
     if (text) {
       try { return JSON.parse(text); }
-      catch (e) { throw new Error(`Tool ${name} returned non-JSON text: ${text.slice(0, 200)}`); }
+      catch (e) { throw new Error(`Tool ${label} returned non-JSON text: ${text.slice(0, 200)}`); }
     }
   }
   return res;
+}
+
+/**
+ * Call a tool by name. Three modes:
+ *   - dispatcher tool (COMPOSIO_*) → call directly
+ *   - any other slug + tool router URL → wrap in COMPOSIO_MULTI_EXECUTE_TOOL
+ *   - any other slug + legacy MCP URL → call directly (was the old behavior)
+ *
+ * Tool Router only advertises the 6 dispatcher tools — calling
+ * OPENAI_CREATE_IMAGE_EDIT directly fails with "tool not found". So we
+ * wrap: client.callTool({ name: "COMPOSIO_MULTI_EXECUTE_TOOL", arguments: {
+ *   tools: [{ tool_slug, arguments }] }})
+ *
+ * Detection: if the active server's listTools includes the requested name,
+ * call directly; otherwise assume it needs the dispatcher.
+ */
+async function callTool(config, name, args = {}) {
+  // Find any userId whose server advertises this tool, or whose server is
+  // a Tool Router (which means the slug needs the dispatcher).
+  let userId = _toolToUserId.get(name);
+  let useDispatcher = false;
+  if (!userId) {
+    // Force a listTools cycle to populate the cache.
+    await listAllTools(config);
+    userId = _toolToUserId.get(name);
+  }
+  if (!userId && !TOOL_ROUTER_DISPATCHERS.has(name)) {
+    // Tool Router doesn't advertise the slug, but it can still execute it
+    // through COMPOSIO_MULTI_EXECUTE_TOOL. Use the first userId that has
+    // a tool router (heuristic: any userId that advertised dispatcher tools).
+    for (const uid of uniqueUserIds(config)) {
+      const tools = _toolsByUserId.get(uid) || [];
+      if (tools.some((t) => TOOL_ROUTER_DISPATCHERS.has(t.name))) {
+        userId = uid;
+        useDispatcher = true;
+        break;
+      }
+    }
+  }
+  if (!userId) throw new Error(`Tool "${name}" is not exposed by any configured userId, and no tool router is reachable.`);
+
+  const client = await connectMcp(config, userId);
+
+  if (useDispatcher) {
+    const res = await client.callTool({
+      name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
+      arguments: { tools: [{ tool_slug: name, arguments: args }] },
+    });
+    const unwrapped = unwrap(res, `MULTI_EXECUTE(${name})`);
+    // The dispatcher returns { results: [{ data, error, ... }] } or similar.
+    const item = Array.isArray(unwrapped?.results) ? unwrapped.results[0]
+              : Array.isArray(unwrapped?.tools) ? unwrapped.tools[0]
+              : unwrapped;
+    if (item?.error) throw new Error(`${name}: ${item.error?.message || JSON.stringify(item.error).slice(0, 200)}`);
+    // Return the inner result so existing callers see the same shape they
+    // would from a direct callTool.
+    return item?.data || item?.result || item;
+  }
+
+  return unwrap(await client.callTool({ name, arguments: args }), name);
 }
 
 function resetCache() {
