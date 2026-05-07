@@ -283,6 +283,9 @@ function serverNameFor(userId) {
     const totalAllowed = toolkitsWithAllowlist.reduce((n, t) => n + t.allowedTools.length, 0);
     console.log(`   → MCP server "${name}" will expose ${totalAllowed} tool(s) total (allowlist enforced)`);
 
+    // Idempotent create: if a server with this deterministic name already
+    // exists in the Composio project, reuse it (look up by name, get its id).
+    // Otherwise create a new one. This makes re-runs safe.
     let server;
     try {
       server = await composio.mcp.create(name, {
@@ -290,8 +293,27 @@ function serverNameFor(userId) {
       });
       record(`MCP server for "${uid}" → ${server.id} (${totalAllowed} tools)`, true);
     } catch (e) {
-      record(`MCP server create for "${uid}"`, false, `composio.mcp.create failed: ${e.message}`);
-      process.exit(1);
+      const isDuplicate = /already exists|MCP_DuplicateServerName|1151/i.test(e.message || '');
+      if (!isDuplicate) {
+        record(`MCP server create for "${uid}"`, false, `composio.mcp.create failed: ${e.message}`);
+        process.exit(1);
+      }
+      // Look up the existing server by name.
+      try {
+        const existingList = await composio.mcp.list({ name });
+        const items = Array.isArray(existingList?.items) ? existingList.items
+                    : Array.isArray(existingList) ? existingList
+                    : [];
+        const existing = items.find((s) => s.name === name);
+        if (!existing) throw new Error(`mcp.list({name}) returned no match for "${name}"`);
+        server = existing;
+        record(`MCP server for "${uid}" → ${server.id} (reused — ${totalAllowed} tools allowlisted in code; existing server config retained)`, true);
+        console.log(`   ℹ Reused existing MCP server "${name}". To force fresh creation, delete it in Composio dashboard and re-run.`);
+      } catch (lookupErr) {
+        record(`MCP server lookup for "${uid}"`, false,
+          `Server "${name}" exists but lookup failed: ${lookupErr.message}. Delete it in Composio dashboard and re-run.`);
+        process.exit(1);
+      }
     }
     let instance;
     try {
