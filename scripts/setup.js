@@ -50,14 +50,58 @@ function saveConfig(config) {
 // toolkit slugs. Drive, OpenAI, OpenRouter are always considered if a
 // userId owns them (resolved by reading the Composio project's auth configs).
 const PLATFORM_TOOLKITS = ['instagram', 'facebook', 'tiktok'];
-// Toolkits that may live on a non-default userId — we always try to wire
-// them if an auth config exists for them under any of the configured
-// userIds.
 const KNOWN_TOOLKITS = [
   'instagram', 'facebook', 'tiktok',
   'googledrive', 'gmail',
   'openai', 'openrouter',
+  'telegram',
 ];
+
+// CRITICAL: hardcoded allowlist of the EXACT tool slugs the skill calls.
+// Without this, composio.mcp.create() exposes the FULL catalog for each
+// connected toolkit (50-150+ tools per server) and the API gets overloaded
+// when Hermes tries to list/load them all on session start.
+//
+// Total surface across all toolkits: ~16 tools instead of ~100+.
+//
+// To add a tool: grep the scripts/ + skill bodies for the new slug, then
+// add it here. If the skill calls a tool not on this list, the call fails
+// at runtime with a "tool not found" error — that's intentional, forces
+// us to declare it explicitly.
+const TOOL_ALLOWLIST = {
+  instagram: [
+    'INSTAGRAM_CREATE_CAROUSEL_CONTAINER',
+    'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH',
+    'INSTAGRAM_GET_IG_USER_MEDIA',
+    'INSTAGRAM_GET_IG_MEDIA',
+    'INSTAGRAM_GET_IG_MEDIA_INSIGHTS',
+  ],
+  facebook: [
+    'FACEBOOK_CREATE_PHOTO_POST',
+    'FACEBOOK_UPLOAD_PHOTOS_BATCH',
+  ],
+  tiktok: [
+    'TIKTOK_POST_PHOTO',
+  ],
+  googledrive: [
+    'GOOGLEDRIVE_FIND_FILE',
+    'GOOGLEDRIVE_DOWNLOAD_FILE',
+  ],
+  openai: [
+    'OPENAI_CREATE_IMAGE',
+    'OPENAI_CREATE_IMAGE_EDIT',
+    'OPENAI_CHAT_COMPLETIONS',
+  ],
+  openrouter: [
+    'OPENROUTER_CHAT_COMPLETIONS',
+  ],
+  telegram: [
+    'TELEGRAM_SEND_MESSAGE',
+  ],
+  gmail: [
+    // currently unused — keep empty until a script actually calls Gmail.
+  ],
+};
 
 function enabledToolkits(config) {
   const list = [];
@@ -192,12 +236,29 @@ function serverNameFor(userId) {
       continue;
     }
     const name = serverNameFor(uid);
+    // Build the per-toolkit allowlist for THIS server. Without this, Composio
+    // exposes the entire toolkit catalog (50-150+ tools per server) and we
+    // overload the API on every Hermes session start.
+    const toolkitsWithAllowlist = tks.map(([tk, authId]) => {
+      const allowed = TOOL_ALLOWLIST[tk] || [];
+      if (allowed.length === 0) {
+        console.log(`   ℹ "${tk}" has no allowlisted tools — toolkit will be wired with auth but expose nothing`);
+      }
+      return {
+        toolkit: tk,
+        authConfigId: authId,
+        allowedTools: allowed,
+      };
+    });
+    const totalAllowed = toolkitsWithAllowlist.reduce((n, t) => n + t.allowedTools.length, 0);
+    console.log(`   → MCP server "${name}" will expose ${totalAllowed} tool(s) total (allowlist enforced)`);
+
     let server;
     try {
       server = await composio.mcp.create(name, {
-        toolkits: tks.map(([tk, authId]) => ({ toolkit: tk, authConfigId: authId })),
+        toolkits: toolkitsWithAllowlist,
       });
-      record(`MCP server for "${uid}" → ${server.id}`, true);
+      record(`MCP server for "${uid}" → ${server.id} (${totalAllowed} tools)`, true);
     } catch (e) {
       record(`MCP server create for "${uid}"`, false, `composio.mcp.create failed: ${e.message}`);
       process.exit(1);
