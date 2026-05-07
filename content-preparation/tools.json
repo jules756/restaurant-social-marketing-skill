@@ -1,0 +1,22 @@
+{
+  "_comment": "Image generation + posting + Drive sync. These are the tools the content pipeline scripts call.",
+  "openai": [
+    "OPENAI_CREATE_IMAGE",
+    "OPENAI_CREATE_IMAGE_EDIT"
+  ],
+  "googledrive": [
+    "GOOGLEDRIVE_FIND_FILE",
+    "GOOGLEDRIVE_DOWNLOAD_FILE"
+  ],
+  "instagram": [
+    "INSTAGRAM_CREATE_CAROUSEL_CONTAINER",
+    "INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH"
+  ],
+  "facebook": [
+    "FACEBOOK_CREATE_PHOTO_POST",
+    "FACEBOOK_UPLOAD_PHOTOS_BATCH"
+  ],
+  "tiktok": [
+    "TIKTOK_POST_PHOTO"
+  ]
+}

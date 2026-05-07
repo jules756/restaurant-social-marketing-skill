@@ -1,0 +1,11 @@
+{
+  "_comment": "Tools this skill needs from Composio. Scoped per toolkit. setup.js aggregates this with every other skill's tools.json to build the full allowlist for the agent's MCP server. Adding a tool here is the ONLY way to make it callable — the server enforces the allowlist; calls to non-listed tools fail.",
+  "telegram": [
+    "TELEGRAM_SEND_MESSAGE"
+  ],
+  "instagram": [
+    "INSTAGRAM_GET_IG_USER_MEDIA",
+    "INSTAGRAM_GET_IG_MEDIA",
+    "INSTAGRAM_GET_IG_MEDIA_INSIGHTS"
+  ]
+}

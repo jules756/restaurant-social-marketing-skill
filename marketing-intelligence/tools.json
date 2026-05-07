@@ -1,0 +1,6 @@
+{
+  "_comment": "Weekly research + competitor analysis use OpenRouter (sonar/perplexity for web search). Daily analytics uses Instagram insights tools (already declared in restaurant-marketing/tools.json so they're not duplicated here).",
+  "openrouter": [
+    "OPENROUTER_CHAT_COMPLETIONS"
+  ]
+}

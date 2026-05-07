@@ -59,51 +59,73 @@ const KNOWN_TOOLKITS = [
   'telegram',
 ];
 
-// CRITICAL: hardcoded allowlist of the EXACT tool slugs the skill calls.
-// Without this, composio.mcp.create() exposes the FULL catalog for each
-// connected toolkit (50-150+ tools per server) and the API gets overloaded
-// when Hermes tries to list/load them all on session start.
-//
-// Total surface across all toolkits: ~16 tools instead of ~100+.
-//
-// To add a tool: grep the scripts/ + skill bodies for the new slug, then
-// add it here. If the skill calls a tool not on this list, the call fails
-// at runtime with a "tool not found" error — that's intentional, forces
-// us to declare it explicitly.
-const TOOL_ALLOWLIST = {
-  instagram: [
-    'INSTAGRAM_CREATE_CAROUSEL_CONTAINER',
-    'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH',
-    'INSTAGRAM_GET_IG_USER_MEDIA',
-    'INSTAGRAM_GET_IG_MEDIA',
-    'INSTAGRAM_GET_IG_MEDIA_INSIGHTS',
-  ],
-  facebook: [
-    'FACEBOOK_CREATE_PHOTO_POST',
-    'FACEBOOK_UPLOAD_PHOTOS_BATCH',
-  ],
-  tiktok: [
-    'TIKTOK_POST_PHOTO',
-  ],
-  googledrive: [
-    'GOOGLEDRIVE_FIND_FILE',
-    'GOOGLEDRIVE_DOWNLOAD_FILE',
-  ],
-  openai: [
-    'OPENAI_CREATE_IMAGE',
-    'OPENAI_CREATE_IMAGE_EDIT',
-    'OPENAI_CHAT_COMPLETIONS',
-  ],
-  openrouter: [
-    'OPENROUTER_CHAT_COMPLETIONS',
-  ],
-  telegram: [
-    'TELEGRAM_SEND_MESSAGE',
-  ],
-  gmail: [
-    // currently unused — keep empty until a script actually calls Gmail.
-  ],
-};
+/**
+ * Aggregate allowlist by scanning every skill folder for tools.json.
+ *
+ * Each skill declares ONLY the tools it needs in its own tools.json
+ * (per-toolkit map). setup.js merges them into one allowlist per
+ * toolkit. New skill = new tools.json = new tools enabled. Removing a
+ * tool requires editing only the skill that uses it.
+ *
+ * Layout (in container at /opt/data/skills/, on host at this script's
+ * grandparent + each skill name):
+ *   restaurant-marketing/tools.json
+ *   content-preparation/tools.json
+ *   marketing-intelligence/tools.json
+ *   ...
+ *
+ * Falls back to scanning ../<skill>/ relative to scripts/ if /opt/data
+ * isn't readable (running on host).
+ */
+function loadToolAllowlist() {
+  const candidates = [
+    '/opt/data/skills',                           // inside container
+    path.resolve(__dirname, '..'),                // when running on host (skill repo root)
+  ];
+  let skillsRoot = null;
+  for (const c of candidates) {
+    if (fs.existsSync(c) && fs.statSync(c).isDirectory()) {
+      // The container layout puts SKILL.md inside each skill folder; the
+      // host layout has them as siblings of scripts/. Both work.
+      skillsRoot = c;
+      break;
+    }
+  }
+  if (!skillsRoot) {
+    console.warn('   ⚠ no skills directory found — allowlist will be empty');
+    return {};
+  }
+
+  const merged = {};
+  const entries = fs.readdirSync(skillsRoot, { withFileTypes: true });
+  let skillCount = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const toolsPath = path.join(skillsRoot, entry.name, 'tools.json');
+    if (!fs.existsSync(toolsPath)) continue;
+    let manifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(toolsPath, 'utf-8'));
+    } catch (e) {
+      console.warn(`   ⚠ ${toolsPath}: ${e.message}`);
+      continue;
+    }
+    skillCount++;
+    for (const [toolkit, tools] of Object.entries(manifest)) {
+      if (toolkit.startsWith('_') || !Array.isArray(tools)) continue;
+      const tk = toolkit.toLowerCase();
+      if (!merged[tk]) merged[tk] = new Set();
+      for (const t of tools) merged[tk].add(t);
+    }
+  }
+  // Convert sets to sorted arrays for deterministic hashing.
+  const out = {};
+  for (const [tk, set] of Object.entries(merged)) out[tk] = [...set].sort();
+  console.log(`   ℹ aggregated allowlist from ${skillCount} skill manifest(s) at ${skillsRoot}`);
+  return out;
+}
+
+const TOOL_ALLOWLIST = loadToolAllowlist();
 
 /**
  * Discover which toolkits are connected under defaultUserId on Composio.
@@ -172,12 +194,20 @@ async function fetchAuthConfigsForUserId(composio, userId) {
 }
 
 /**
- * Composio caps server names at 30 chars + accepts [a-z0-9-]. Hash the
- * userId so the name is deterministic across reinstalls.
+ * Composio caps server names at 30 chars + accepts [a-z0-9-]. The name
+ * encodes:
+ *   - an 8-char hash of the userId (so different agents get different names),
+ *   - an 8-char hash of the allowlist contents (so changes to the allowlist
+ *     produce a NEW server instead of inheriting the old server's tool set).
+ *
+ * Without the allowlist hash, re-running setup with an updated tools.json
+ * silently reuses the old server and the new tools never get exposed.
  */
-function serverNameFor(userId) {
-  const hash = crypto.createHash('sha1').update(userId).digest('hex').slice(0, 8);
-  return `rm-${hash}`;
+function serverNameFor(userId, allowlistObj) {
+  const userHash = crypto.createHash('sha1').update(userId).digest('hex').slice(0, 8);
+  const stable = JSON.stringify(allowlistObj, Object.keys(allowlistObj).sort());
+  const allowHash = crypto.createHash('sha1').update(stable).digest('hex').slice(0, 8);
+  return `rm-${userHash}-${allowHash}`;
 }
 
 (async () => {
@@ -265,12 +295,17 @@ function serverNameFor(userId) {
       console.log(`   ⏭  userId "${uid}" has no toolkits — skipping MCP server`);
       continue;
     }
-    const name = serverNameFor(uid);
-    // Build the per-toolkit allowlist for THIS server. Without this, Composio
-    // exposes the entire toolkit catalog (50-150+ tools per server) and we
-    // overload the API on every Hermes session start.
+    // Build the per-toolkit allowlist for THIS server, scoped to only the
+    // toolkits this userId actually owns. Without this, Composio exposes the
+    // entire toolkit catalog (50-150+ tools per server) and we overload the
+    // API on every Hermes session start.
+    const scopedAllowlist = {};
+    for (const [tk] of tks) {
+      scopedAllowlist[tk] = TOOL_ALLOWLIST[tk] || [];
+    }
+    const name = serverNameFor(uid, scopedAllowlist);
     const toolkitsWithAllowlist = tks.map(([tk, authId]) => {
-      const allowed = TOOL_ALLOWLIST[tk] || [];
+      const allowed = scopedAllowlist[tk];
       if (allowed.length === 0) {
         console.log(`   ℹ "${tk}" has no allowlisted tools — toolkit will be wired with auth but expose nothing`);
       }
