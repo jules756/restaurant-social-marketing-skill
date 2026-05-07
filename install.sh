@@ -84,7 +84,11 @@ else
 fi
 
 # 3. SOUL.md → Hermes persona for this agent.
-cp "$SKILL_DIR/templates/SOUL.md" "$HERMES_HOME/SOUL.md"
+if ! cp "$SKILL_DIR/templates/SOUL.md" "$HERMES_HOME/SOUL.md" 2>/dev/null; then
+  echo "✗ Failed to write $HERMES_HOME/SOUL.md (permission denied)."
+  echo "  Fix: sudo chown -R \"\$(id -u):\$(id -g)\" $HERMES_HOME && retry."
+  exit 1
+fi
 echo "  ✓ installed SOUL.md → $HERMES_HOME/SOUL.md"
 
 # 4. Skill folders → $HERMES_HOME/skills/<skill>/.
@@ -101,8 +105,9 @@ echo "  ✓ installed ${#SKILL_NAMES[@]} skill folders → $HERMES_HOME/skills/"
 
 # 5. On-boot hook. Runs inside the Hermes container; provisions MCP
 #    servers when the per-userId map in config is still empty.
+HOOK_FILE="$HERMES_HOME/hooks/on-boot/restaurant-social-marketing-skill.sh"
 mkdir -p "$HERMES_HOME/hooks/on-boot"
-cat > "$HERMES_HOME/hooks/on-boot/restaurant-social-marketing-skill.sh" <<'HOOK'
+cat > "$HOOK_FILE" <<'HOOK'
 #!/bin/bash
 # Auto-installed by restaurant-social-marketing-skill/install.sh.
 # Runs inside the Hermes container on every boot. Idempotent.
@@ -125,8 +130,15 @@ if [[ "$URLS_COUNT" == "0" ]]; then
     echo "[restaurant-marketing] setup.js failed — fix config.json (composio.apiKey, defaultUserId, userIdOverrides) then restart"
 fi
 HOOK
-chmod +x "$HERMES_HOME/hooks/on-boot/restaurant-social-marketing-skill.sh"
-echo "  ✓ installed on-boot hook"
+chmod +x "$HOOK_FILE"
+# Verify the file actually wrote — silent failures here have happened before.
+if [[ ! -s "$HOOK_FILE" ]]; then
+  echo "✗ on-boot hook write FAILED — $HOOK_FILE is missing or empty after the heredoc."
+  echo "  Likely cause: $HERMES_HOME is owned by a UID that doesn't allow this user to write."
+  echo "  Fix: sudo chown -R \"\$(id -u):\$(id -g)\" $HERMES_HOME"
+  exit 1
+fi
+echo "  ✓ installed on-boot hook ($HOOK_FILE, $(wc -l < "$HOOK_FILE") lines)"
 
 # 6. npm deps
 if command -v npm >/dev/null 2>&1; then
