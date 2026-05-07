@@ -17,7 +17,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { Composio } = require('@composio/core');
 const {
   listAllTools,
@@ -193,22 +192,9 @@ async function fetchAuthConfigsForUserId(composio, userId) {
   return out;
 }
 
-/**
- * Composio caps server names at 30 chars + accepts [a-z0-9-]. The name
- * encodes:
- *   - an 8-char hash of the userId (so different agents get different names),
- *   - an 8-char hash of the allowlist contents (so changes to the allowlist
- *     produce a NEW server instead of inheriting the old server's tool set).
- *
- * Without the allowlist hash, re-running setup with an updated tools.json
- * silently reuses the old server and the new tools never get exposed.
- */
-function serverNameFor(userId, allowlistObj) {
-  const userHash = crypto.createHash('sha1').update(userId).digest('hex').slice(0, 8);
-  const stable = JSON.stringify(allowlistObj, Object.keys(allowlistObj).sort());
-  const allowHash = crypto.createHash('sha1').update(stable).digest('hex').slice(0, 8);
-  return `rm-${userHash}-${allowHash}`;
-}
+// (Tool Router uses sessions instead of named MCP servers. The previous
+// `serverNameFor` helper and its duplicate-name handling are not needed —
+// `composio.create(userId, ...)` auto-manages session ids.)
 
 (async () => {
   console.log(`\n=== Restaurant Marketing — Setup ===`);
@@ -285,81 +271,52 @@ function serverNameFor(userId, allowlistObj) {
     }
   }
 
-  // 5. Per userId: create MCP server (or reuse) and generate URL.
+  // 5. Per userId: create a Tool Router session with per-tool allowlist.
+  //    composio.create(userId, { toolkits, tools }) is the API that actually
+  //    enforces the per-tool restriction — composio.mcp.create / .generate
+  //    advertises the entire toolkit catalog regardless of allowedTools.
+  //    See: ~/.agents/skills/composio/rules/tr-session-config.md
   const newServerUrls = {};
   const newServerIds = {};
 
   for (const uid of userIds) {
     const tks = Object.entries(perUser[uid].toolkits);
     if (!tks.length) {
-      console.log(`   ⏭  userId "${uid}" has no toolkits — skipping MCP server`);
+      console.log(`   ⏭  userId "${uid}" has no toolkits — skipping`);
       continue;
     }
-    // Build the per-toolkit allowlist for THIS server, scoped to only the
-    // toolkits this userId actually owns. Without this, Composio exposes the
-    // entire toolkit catalog (50-150+ tools per server) and we overload the
-    // API on every Hermes session start.
-    const scopedAllowlist = {};
+    const toolkitNames = tks.map(([tk]) => tk);
+    const toolsMap = {};
     for (const [tk] of tks) {
-      scopedAllowlist[tk] = TOOL_ALLOWLIST[tk] || [];
-    }
-    const name = serverNameFor(uid, scopedAllowlist);
-    const toolkitsWithAllowlist = tks.map(([tk, authId]) => {
-      const allowed = scopedAllowlist[tk];
-      if (allowed.length === 0) {
-        console.log(`   ℹ "${tk}" has no allowlisted tools — toolkit will be wired with auth but expose nothing`);
+      const list = TOOL_ALLOWLIST[tk] || [];
+      if (list.length === 0) {
+        console.log(`   ℹ "${tk}" has no allowlisted tools — skipping it from this session`);
+        continue;
       }
-      return {
-        toolkit: tk,
-        authConfigId: authId,
-        allowedTools: allowed,
-      };
-    });
-    const totalAllowed = toolkitsWithAllowlist.reduce((n, t) => n + t.allowedTools.length, 0);
-    console.log(`   → MCP server "${name}" will expose ${totalAllowed} tool(s) total (allowlist enforced)`);
+      toolsMap[tk] = list;
+    }
+    const totalAllowed = Object.values(toolsMap).reduce((n, l) => n + l.length, 0);
+    console.log(`   → Tool Router session for "${uid}" will expose ${totalAllowed} tool(s) across ${Object.keys(toolsMap).length} toolkit(s)`);
 
-    // Idempotent create: if a server with this deterministic name already
-    // exists in the Composio project, reuse it (look up by name, get its id).
-    // Otherwise create a new one. This makes re-runs safe.
-    let server;
+    let session;
     try {
-      server = await composio.mcp.create(name, {
-        toolkits: toolkitsWithAllowlist,
+      session = await composio.create(uid, {
+        toolkits: toolkitNames,
+        tools: toolsMap,
       });
-      record(`MCP server for "${uid}" → ${server.id} (${totalAllowed} tools)`, true);
+      record(`Tool Router session for "${uid}" → ${session.sessionId || session.id} (${totalAllowed} tools)`, true);
     } catch (e) {
-      const isDuplicate = /already exists|MCP_DuplicateServerName|1151/i.test(e.message || '');
-      if (!isDuplicate) {
-        record(`MCP server create for "${uid}"`, false, `composio.mcp.create failed: ${e.message}`);
-        process.exit(1);
-      }
-      // Look up the existing server by name.
-      try {
-        const existingList = await composio.mcp.list({ name });
-        const items = Array.isArray(existingList?.items) ? existingList.items
-                    : Array.isArray(existingList) ? existingList
-                    : [];
-        const existing = items.find((s) => s.name === name);
-        if (!existing) throw new Error(`mcp.list({name}) returned no match for "${name}"`);
-        server = existing;
-        record(`MCP server for "${uid}" → ${server.id} (reused — ${totalAllowed} tools allowlisted in code; existing server config retained)`, true);
-        console.log(`   ℹ Reused existing MCP server "${name}". To force fresh creation, delete it in Composio dashboard and re-run.`);
-      } catch (lookupErr) {
-        record(`MCP server lookup for "${uid}"`, false,
-          `Server "${name}" exists but lookup failed: ${lookupErr.message}. Delete it in Composio dashboard and re-run.`);
-        process.exit(1);
-      }
-    }
-    let instance;
-    try {
-      instance = await composio.mcp.generate(uid, server.id);
-      record(`MCP URL for "${uid}" → ${instance.url.slice(0, 50)}…`, true);
-    } catch (e) {
-      record(`MCP URL generate for "${uid}"`, false, e.message);
+      record(`Tool Router session for "${uid}"`, false, `composio.create failed: ${e.message}`);
       process.exit(1);
     }
-    newServerUrls[uid] = instance.url;
-    newServerIds[uid] = server.id;
+    const url = session?.mcp?.url || session?.url;
+    if (!url) {
+      record(`MCP URL for "${uid}"`, false, `session has no mcp.url. Shape: ${JSON.stringify(session).slice(0, 200)}`);
+      process.exit(1);
+    }
+    record(`MCP URL for "${uid}" → ${url.slice(0, 50)}…`, true);
+    newServerUrls[uid] = url;
+    newServerIds[uid] = session.sessionId || session.id;
   }
 
   // 6. Persist
