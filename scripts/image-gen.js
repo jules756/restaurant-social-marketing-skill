@@ -11,7 +11,8 @@
  * URL shape:
  *   {endpoint}/openai/deployments/{deployment}/images/{generations|edits}
  *     ?api-version={apiVersion}
- * Auth: Authorization: Bearer <key>. Body shape matches OpenAI's
+ * Auth: api-key: <key> header (Azure-native shape; Bearer doesn't work
+ * for image deployments). Body shape matches OpenAI's
  * gpt-image-* contract (no response_format — Azure always returns b64).
  *
  * Composio backend goes through MCP using OPENAI_CREATE_IMAGE /
@@ -128,14 +129,14 @@ async function azureGenerate(config, { prompt, size, references }) {
     }
     res = await fetch(url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${az.apiKey}` },
+      headers: { 'api-key': az.apiKey },
       body: form,
     });
   } else {
     res = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${az.apiKey}`,
+        'api-key': az.apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -191,7 +192,7 @@ async function azurePreflight(config) {
     const res = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${az.apiKey}`,
+        'api-key': az.apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
