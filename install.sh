@@ -380,12 +380,17 @@ Required config — only two fields:
   - composio.apiKey         (Composio project API key)
   - composio.defaultUserId  (Composio userId that owns your connections)
 
-Optional — flip the image-gen backend if you have a custom OpenAI endpoint
-(otherwise the default 'composio' works without further config):
-  - imageGen.primary = "azure" | "composio"
-  - imageGen.azure.baseUrl  (e.g. https://yourthing.openai.azure.com/openai/v1)
-  - imageGen.azure.deployment  (model deployment name)
-  - export AZURE_OPENAI_API_KEY="..." in the host shell or container env
+Optional — use your own Azure OpenAI image deployment (ai.azure.com)
+to save Composio credits. Default 'composio' works without further config.
+Paste these into config.json under imageGen.azure:
+  - imageGen.primary = "azure"
+  - imageGen.azure.endpoint    (e.g. https://spacelist.openai.azure.com)
+  - imageGen.azure.deployment  (e.g. gpt-image-2)
+  - imageGen.azure.apiVersion  (default 2024-02-01)
+  - imageGen.azure.apiKey      (paste key — or leave empty + export AZURE_API_KEY)
+  - imageGen.azure.quality     (low|medium|high — default high)
+Setup will preflight the endpoint and report ✅ / ⚠.
+Composio remains the fallback if fallbackOnError stays true.
 
 Then:
   docker exec hermes-$AGENT node /host-agent-home/scripts/setup.js \\

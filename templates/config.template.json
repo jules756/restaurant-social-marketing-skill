@@ -25,14 +25,16 @@
     "utmSource": "social"
   },
   "imageGen": {
-    "_comment": "Two backends: 'azure' is a direct OpenAI-compatible endpoint (Azure or your own proxy), 'composio' goes through Composio MCP. primary controls which is tried first; fallbackOnError swaps to the other on failure. Default model is gpt-image-2. azure.apiKeyEnv names the env var that holds the key (do NOT paste the key here).",
+    "_comment": "Two backends. 'azure' = native Azure OpenAI image deployment (ai.azure.com → Deployments + Endpoint). 'composio' = Composio MCP. primary picks which is tried first; fallbackOnError swaps on failure. For Azure, paste the three fields (endpoint, deployment, apiKey) and set primary='azure'. apiKey can also live in env var named by apiKeyEnv (default AZURE_API_KEY). quality: low|medium|high — cost knob, defaults to high.",
     "primary": "composio",
     "fallbackOnError": true,
-    "model": "gpt-image-2",
     "azure": {
-      "baseUrl": "",
-      "apiKeyEnv": "AZURE_OPENAI_API_KEY",
-      "deployment": ""
+      "endpoint": "",
+      "deployment": "gpt-image-2",
+      "apiVersion": "2024-02-01",
+      "apiKey": "",
+      "apiKeyEnv": "AZURE_API_KEY",
+      "quality": "high"
     },
     "composio": {
       "toolSlug": ""

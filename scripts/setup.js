@@ -24,6 +24,7 @@ const {
   uniqueUserIds,
   resolveUserIdForToolkit,
 } = require('./mcp-client');
+const { azurePreflight } = require('./image-gen');
 
 const args = process.argv.slice(2);
 const getArg = (n) => { const i = args.indexOf(`--${n}`); return i !== -1 ? args[i + 1] : null; };
@@ -347,6 +348,23 @@ async function fetchAuthConfigsForUserId(composio, userId) {
   console.log('\n   Connected toolkits:');
   for (const [slug, count] of Object.entries(toolkitCounts).sort()) {
     console.log(`     ✅ ${slug.padEnd(15)} ${count} tool(s)`);
+  }
+
+  // Image-gen preflight. Only runs when Azure is wired; non-blocking
+  // either way (fallbackOnError handles runtime).
+  if (config.imageGen?.primary === 'azure' || config.imageGen?.azure?.endpoint) {
+    process.stdout.write('\n   Azure image-gen preflight... ');
+    const r = await azurePreflight(config);
+    if (r.ok) {
+      console.log(`✅ reachable (deployment=${r.deployment})`);
+      record('Azure image-gen reachable', true);
+    } else {
+      const msg = r.status
+        ? `HTTP ${r.status}: ${r.body || ''}`
+        : (r.reason || 'unknown');
+      console.log(`⚠ ${msg.slice(0, 200)}`);
+      record('Azure image-gen reachable', false, 'Check imageGen.azure.{endpoint,deployment,apiKey} — Composio fallback will still work if fallbackOnError=true.');
+    }
   }
 
   // 8. Wire Hermes's own config.yaml so the in-conversation agent can call

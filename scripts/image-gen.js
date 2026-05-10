@@ -7,15 +7,18 @@
  * Both backends speak the same public surface:
  *   generateImage({ prompt, size, references? }) → Buffer (PNG bytes)
  *
- * Azure backend uses the OpenAI-compatible `/images/generations` and
- * `/images/edits` endpoints. References (img2img) are sent multipart.
+ * Azure backend is *native* Azure OpenAI (ai.azure.com deployments),
+ * URL shape:
+ *   {endpoint}/openai/deployments/{deployment}/images/{generations|edits}
+ *     ?api-version={apiVersion}
+ * Auth: Authorization: Bearer <key>. Body shape matches OpenAI's
+ * gpt-image-* contract (no response_format — Azure always returns b64).
  *
  * Composio backend goes through MCP using OPENAI_CREATE_IMAGE /
  * OPENAI_CREATE_IMAGE_EDIT.
  *
- * Why dual: the user has a custom Azure endpoint (free) but it's going
- * down on 22 July; Composio is the durable backend. Once Azure is gone,
- * flip primary back to "composio" — no code change.
+ * Why dual: owners with Azure credits run Azure as primary (free); Composio
+ * is the durable fallback. Flip imageGen.primary in config to switch.
  */
 
 const fs = require('fs');
@@ -86,55 +89,72 @@ async function composioGenerate(config, { prompt, size, references }) {
   return Buffer.from(b64, 'base64');
 }
 
-// ─── Azure / OpenAI-compatible backend ────────────────────────────────
+// ─── Azure OpenAI backend (native ai.azure.com deployments) ───────────
+function azureConfig(config) {
+  const az = config.imageGen?.azure || {};
+  // Back-compat: old configs used baseUrl (full path incl. /openai/v1).
+  // New configs use endpoint (host only) + deployment + apiVersion.
+  const endpoint = (az.endpoint || az.baseUrl || '').replace(/\/+$/, '');
+  const deployment = az.deployment || config.imageGen?.model || 'gpt-image-2';
+  const apiVersion = az.apiVersion || '2024-02-01';
+  const apiKeyEnv = az.apiKeyEnv || 'AZURE_API_KEY';
+  const apiKey = az.apiKey || process.env[apiKeyEnv] || '';
+  const quality = az.quality || 'high';
+  return { endpoint, deployment, apiVersion, apiKey, quality };
+}
+
+function azureUrl({ endpoint, deployment, apiVersion }, kind) {
+  // kind: 'generations' | 'edits'
+  return `${endpoint}/openai/deployments/${encodeURIComponent(deployment)}/images/${kind}?api-version=${encodeURIComponent(apiVersion)}`;
+}
+
 async function azureGenerate(config, { prompt, size, references }) {
-  const baseUrl = (config.imageGen?.azure?.baseUrl || '').replace(/\/$/, '');
-  const apiKeyEnv = config.imageGen?.azure?.apiKeyEnv || 'AZURE_OPENAI_API_KEY';
-  const apiKey = process.env[apiKeyEnv];
-  const deployment = config.imageGen?.azure?.deployment || config.imageGen?.model || 'gpt-image-2';
-  if (!baseUrl) throw new Error('Azure: imageGen.azure.baseUrl is empty.');
-  if (!apiKey) throw new Error(`Azure: env var ${apiKeyEnv} is empty.`);
+  const az = azureConfig(config);
+  if (!az.endpoint) throw new Error('Azure: imageGen.azure.endpoint is empty.');
+  if (!az.apiKey) throw new Error(`Azure: api key missing — set imageGen.azure.apiKey or env ${config.imageGen?.azure?.apiKeyEnv || 'AZURE_API_KEY'}.`);
 
   const useEdit = references && references.length > 0;
-  const endpoint = useEdit ? `${baseUrl}/images/edits` : `${baseUrl}/images/generations`;
+  const url = azureUrl(az, useEdit ? 'edits' : 'generations');
 
   let res;
   if (useEdit) {
-    // multipart with prompt + image(s)
     const form = new FormData();
     form.append('prompt', prompt);
-    form.append('model', deployment);
-    form.append('n', '1');
     form.append('size', size);
+    form.append('n', '1');
     for (const p of references) {
       const buf = fs.readFileSync(path.resolve(p));
       form.append('image', new Blob([buf], { type: 'image/png' }), path.basename(p));
     }
-    res = await fetch(endpoint, {
+    res = await fetch(url, {
       method: 'POST',
-      headers: { 'api-key': apiKey, 'Authorization': `Bearer ${apiKey}` },
+      headers: { Authorization: `Bearer ${az.apiKey}` },
       body: form,
     });
   } else {
-    res = await fetch(endpoint, {
+    res = await fetch(url, {
       method: 'POST',
       headers: {
-        'api-key': apiKey,
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${az.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        prompt, model: deployment, n: 1, size, response_format: 'b64_json',
+        prompt,
+        size,
+        n: 1,
+        quality: az.quality,
+        output_format: 'png',
+        output_compression: 100,
       }),
     });
   }
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Azure ${endpoint} → ${res.status}: ${body.slice(0, 300)}`);
+    throw new Error(`Azure ${url} → ${res.status}: ${body.slice(0, 300)}`);
   }
   const json = await res.json();
-  const b64 = extractImageB64(json) || json?.data?.[0]?.b64_json;
+  const b64 = extractImageB64(json);
   if (!b64) throw new Error(`Azure: no image in response. First 300 chars: ${JSON.stringify(json).slice(0, 300)}`);
   return Buffer.from(b64, 'base64');
 }
@@ -160,4 +180,34 @@ async function generateImage(config, opts) {
   throw lastErr || new Error('All image-gen backends failed.');
 }
 
-module.exports = { generateImage };
+// Exported for setup.js preflight.
+async function azurePreflight(config) {
+  const az = azureConfig(config);
+  if (!az.endpoint || !az.apiKey) {
+    return { ok: false, reason: 'endpoint or apiKey not set' };
+  }
+  const url = azureUrl(az, 'generations');
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${az.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt: 'a small red square on white background',
+        size: '1024x1024',
+        n: 1,
+        quality: 'low',
+        output_format: 'png',
+      }),
+    });
+    if (res.ok) return { ok: true, deployment: az.deployment };
+    const body = await res.text().catch(() => '');
+    return { ok: false, status: res.status, body: body.slice(0, 300) };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
+module.exports = { generateImage, azurePreflight };
